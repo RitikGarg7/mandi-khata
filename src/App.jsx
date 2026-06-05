@@ -16,6 +16,7 @@ function Router() {
   const { unlock, loadAll } = useApp();
   const [screen, setScreen]     = useState("login");
   const [selParty, setSelParty] = useState(null);
+  const [editBill, setEditBill] = useState(null);
   const [hist, setHist]         = useState([]);
   const [pendingSession, setPendingSession] = useState(null);
 
@@ -33,12 +34,14 @@ function Router() {
   const nav = (to, data) => {
     setHist(h => [...h, screen]);
     if (to === "khata" && data) setSelParty(data);
+    setEditBill((to === "newI" || to === "newJ") ? (data || null) : null);
     setScreen(to);
   };
 
   const back = () => {
     const prev = hist[hist.length - 1] || "home";
     setHist(h => h.slice(0, -1));
+    setEditBill(null);
     setScreen(prev);
   };
 
@@ -57,8 +60,8 @@ function Router() {
     bills:    <Bills nav={nav} />,
     balance:  <Balance nav={nav} />,
     newParty: <NewParty onBack={back} />,
-    newJ:     <NewFormJ onBack={back} />,
-    newI:     <NewFormI onBack={back} />,
+    newJ:     <NewFormJ onBack={back} nav={nav} editData={editBill} />,
+    newI:     <NewFormI onBack={back} nav={nav} editData={editBill} />,
     khata:    <Khata party={selParty} onBack={back} />,
   };
 

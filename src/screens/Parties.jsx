@@ -3,7 +3,7 @@ import { useApp } from "../context/AppContext";
 import { Shell, C, Card, TopBar, BottomNav, Tag, fmt } from "../components/ui";
 
 export default function Parties({ nav }) {
-  const { parties, partyBalance } = useApp();
+  const { parties, trueBalance } = useApp();
   const [tab, setTab] = useState("farmers");
   const [search, setSearch] = useState("");
 
@@ -60,9 +60,9 @@ export default function Parties({ nav }) {
 
         {list.map(p => {
           const isFarmer = p.type === "Farmer";
-          const bal = partyBalance(p.id);
-          const displayBal = isFarmer ? Math.abs(bal) : bal;
-          const isOwed = isFarmer ? bal < 0 : bal > 0;
+          const bal = trueBalance(p);
+          const displayBal = Math.abs(bal);
+          const isOwed = bal > 0;
 
           return (
             <Card key={p.id} onClick={() => nav("khata", p)} style={{ cursor: "pointer" }}>

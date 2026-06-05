@@ -2,33 +2,46 @@ import { useState } from "react";
 import { useApp } from "../context/AppContext";
 import { Shell, C, Card, TopBar, Btn, Field, Divider, Row, fmt } from "../components/ui";
 
-export default function NewFormI({ onBack }) {
-  const { parties, saleBills, purchaseBills, saveSaleBill } = useApp();
+export default function NewFormI({ onBack, nav, editData }) {
+  const { parties, saleBills, purchaseBills, saveSaleBill, updateSaleBill } = useApp();
   const buyers = parties.filter(p => p.type === "Customer");
+
+  const dalaliAccount   = parties.find(p => p.type === "Expense" && p.expense_category === "Dalali");
+  const mazdooriAccount = parties.find(p => p.type === "Expense" && ["Mazdoori","Labour"].includes(p.expense_category));
+
+  const isEdit = !!editData;
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
 
-  const [f, setF] = useState({
-    party_id: "",
-    purchase_bill_id: "",
+  const [f, setF] = useState(() => editData ? {
+    party_id:        editData.party_id       || "",
+    purchase_bill_id:editData.purchase_bill_id || "",
+    date:            editData.date            || new Date().toISOString().split("T")[0],
+    series:          editData.series          || "Form I2",
+    commodity:       editData.commodity       || "",
+    bags:            String(editData.bags     || ""),
+    weight:          String(editData.weight   || ""),
+    rate:            String(editData.rate     || ""),
+    mpc_rate:        String(editData.mpc_rate || "2.5"),
+    auc_rate:        String(editData.auc_rate || "0.1"),
+    labour_rate:     String(editData.labour_rate || "7.88"),
+    dami_amount:     String(editData.dami_amount || ""),
+    buyer_state:     editData.buyer_state     || "Haryana",
+    notes:           editData.notes           || "",
+  } : {
+    party_id: "", purchase_bill_id: "",
     date: new Date().toISOString().split("T")[0],
-    series: "Form I2",
-    commodity: "",
-    bags: "",
-    weight: "",
-    rate: "",
-    mpc_rate: "2.5",
-    auc_rate: "0.1",
-    labour_rate: "7.88",
-    dami_amount: "",
-    buyer_state: "Haryana",
-    notes: "",
+    series: "Form I2", commodity: "",
+    bags: "", weight: "", rate: "",
+    mpc_rate: "2.5", auc_rate: "0.1", labour_rate: "7.88",
+    dami_amount: "", buyer_state: "Haryana", notes: "",
   });
   const s = (k, v) => setF(p => ({ ...p, [k]: v }));
 
   const nextBillNo = () => {
+    if (isEdit) return editData.bill_number;
     const bills = saleBills.filter(b => b.series === f.series);
     return bills.length > 0 ? Math.max(...bills.map(b => b.bill_number || 0)) + 1 : 1;
   };
@@ -93,7 +106,8 @@ export default function NewFormI({ onBack }) {
         notes: f.notes,
         created_at: new Date().toISOString(),
       };
-      await saveSaleBill(billData);
+      if (isEdit) await updateSaleBill(editData.id, billData);
+      else await saveSaleBill(billData);
       setSaved(true);
     } catch (e) {
       setError(e.message);
@@ -120,7 +134,7 @@ export default function NewFormI({ onBack }) {
   return (
     <Shell>
       <div style={{ background: C.saffron }}>
-        <TopBar title="Form I — Naya Bikri" onBack={onBack} bg="transparent" />
+        <TopBar title={isEdit ? "Form I — Edit Karein" : "Form I — Naya Bikri"} onBack={onBack} bg="transparent" />
         <div style={{ padding: "4px 16px 18px" }}>
           <p style={{ color: "rgba(255,255,255,0.82)", fontSize: 12 }}>📤 Buyer ko bikri ka bill</p>
         </div>
@@ -170,9 +184,12 @@ export default function NewFormI({ onBack }) {
           </div>
           <Field label="Bhao (₹ per Quintal)" value={f.rate} onChange={v => s("rate", v)} type="number" prefix="₹" suffix="/qtl" placeholder="0" required />
           {gross_amount > 0 && (
-            <div style={{ background: C.cream, borderRadius: 8, padding: "10px 12px", marginTop: 4 }}>
-              <span style={{ fontSize: 12, color: C.inkLight }}>Kul Raqam </span>
-              <span style={{ fontFamily: "'Baloo 2'", fontWeight: 700, fontSize: 18, color: C.ink }}>₹{fmt(gross_amount)}</span>
+            <div style={{ background: C.cream, borderRadius: 8, padding: "12px 14px", marginTop: 6 }}>
+              <div style={{ fontSize: 11, color: C.inkLight, marginBottom: 2 }}>{weight} qtl × ₹{rate}/qtl</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: C.inkMid }}>Kul Raqam</span>
+                <span style={{ fontFamily: "'Baloo 2'", fontWeight: 800, fontSize: 20, color: C.ink }}>₹{fmt(gross_amount)}</span>
+              </div>
             </div>
           )}
         </Card>
@@ -185,21 +202,53 @@ export default function NewFormI({ onBack }) {
             <Field label="Mazdoori (₹/bori)" value={f.labour_rate} onChange={v => s("labour_rate", v)} type="number" prefix="₹" hint="Default ₹7.88" />
             <Field label="Dami (₹)" value={f.dami_amount} onChange={v => s("dami_amount", v)} type="number" prefix="₹" placeholder="0" />
           </div>
+          {gross_amount > 0 && (
+            <div style={{ background: C.greenLight, borderRadius: 8, padding: "10px 14px", marginTop: 6 }}>
+              <div style={{ fontSize: 11, color: C.green, marginBottom: 2 }}>💰 Aapki Aadat: ₹{fmt(mpc_amount)} · AUC: ₹{fmt(auc_amount)}</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: C.inkMid }}>Kul Kharche</span>
+                <span style={{ fontFamily: "'Baloo 2'", fontWeight: 700, fontSize: 15, color: C.inkMid }}>+ ₹{fmt(mpc_amount + auc_amount + labour_amount + damiAmt)}</span>
+              </div>
+            </div>
+          )}
         </Card>
+
+        {gross_amount > 0 && auc_amount > 0 && !dalaliAccount && (
+          <div style={{ background: "#FFF8E1", border: "1.5px solid #F59E0B", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: "#92400E", marginBottom: 4 }}>⚠️ Dalali account nahi mila</p>
+            <p style={{ fontSize: 12, color: "#78350F", lineHeight: 1.5, marginBottom: 10 }}>
+              Is bill mein Dalali (₹{fmt(auc_amount)}) collect ho rahi hai. Ise Balance Sheet mein liability track karne ke liye ek <strong>Dalali</strong> Expense account zaroori hai — warna paise kidhar gaye pata nahi chalega.
+            </p>
+            {nav && (
+              <button onClick={() => nav("newParty")}
+                style={{ background: "#F59E0B", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                + Dalali Account Banayein
+              </button>
+            )}
+          </div>
+        )}
+
+        {gross_amount > 0 && labour_amount > 0 && !mazdooriAccount && (
+          <div style={{ background: "#FFF8E1", border: "1.5px solid #F59E0B", borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: "#92400E", marginBottom: 4 }}>⚠️ Mazdoori account nahi mila</p>
+            <p style={{ fontSize: 12, color: "#78350F", lineHeight: 1.5, marginBottom: 10 }}>
+              Is bill mein Mazdoori (₹{fmt(labour_amount)}) collect ho rahi hai. Ise track karne ke liye ek <strong>Mazdoori</strong> Expense account banayein.
+            </p>
+            {nav && (
+              <button onClick={() => nav("newParty")}
+                style={{ background: "#F59E0B", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                + Mazdoori Account Banayein
+              </button>
+            )}
+          </div>
+        )}
 
         {gross_amount > 0 && (
           <Card style={{ marginBottom: 12, background: C.saffronLight, border: `1.5px solid ${C.saffron}` }}>
-            <p style={{ fontSize: 12, fontWeight: 700, color: C.saffron, marginBottom: 8 }}>📊 Bill ka Hisaab — Buyer se lena</p>
-            <Row label="Kul Raqam (grain ki kimat)" amount={gross_amount} />
-            <Divider label="Mandi ke Kharche (+)" />
-            <div style={{ background: C.greenLight, borderRadius: 8, padding: "8px 10px", marginBottom: 6 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: C.green, marginBottom: 4 }}>💰 AAPKI KAMAI</div>
-              <Row label={`Aadat/MPC (${mpcRate}%)`} amount={mpc_amount} color={C.green} sub />
-              <Row label={`Dalali/AUC (${aucRate}%) → Dalali khata`} amount={auc_amount} color={C.inkMid} sub />
-            </div>
-            <Row label={`Mazdoori (${bags} bori × ₹${labRate})`} amount={labour_amount} indent />
-            {damiAmt > 0 && <Row label="Dami" amount={damiAmt} indent />}
-            <Divider label="GST on MPC + AUC" />
+            <p style={{ fontSize: 12, fontWeight: 700, color: C.saffron, marginBottom: 8 }}>📊 Grand Total — Buyer se lena</p>
+            <Row label="Kul Raqam (grain)" amount={gross_amount} />
+            <Row label="Mandi Kharche (+)" amount={mpc_amount + auc_amount + labour_amount + damiAmt} />
+            <Divider label="GST on Aadat + AUC" />
             {!isInter ? (
               <>
                 <Row label="CGST (9%)" amount={cgst_amount} indent sub />
@@ -215,7 +264,7 @@ export default function NewFormI({ onBack }) {
         )}
 
         <Btn onClick={handleSave} disabled={busy || !f.party_id || !f.commodity || !bags || !weight || !rate}>
-          {busy ? "Save ho raha hai..." : "✓ Form I Save Karein"}
+          {busy ? "Save ho raha hai..." : isEdit ? "✓ Update Karein" : "✓ Form I Save Karein"}
         </Btn>
         <Btn variant="ghost" onClick={onBack} style={{ marginTop: 8 }}>Raddh Karein</Btn>
       </div>

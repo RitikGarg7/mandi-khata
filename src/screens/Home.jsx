@@ -1,31 +1,32 @@
 import { useApp } from "../context/AppContext";
 import { Shell, C, Card, BottomNav, Tag, amountShort, fmt } from "../components/ui";
 
+function currentFY() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth(); // 0-indexed; April = 3
+  const start = m >= 3 ? y : y - 1;
+  return `${start}–${String(start + 1).slice(2)}`;
+}
+
 export default function Home({ nav }) {
-  const { parties, purchaseBills, saleBills, settings, ledger, partyBalance } = useApp();
+  const { parties, purchaseBills, saleBills, settings, trueBalance } = useApp();
 
   const farmers = parties.filter(p => p.type === "Farmer");
   const buyers  = parties.filter(p => p.type === "Customer");
 
-  const totalFarmerLoans = farmers.reduce((s, f) => {
-    const bal = partyBalance(f.id);
-    return s + (bal < 0 ? Math.abs(bal) : 0); // negative = agent paid out / owes to farmer
-  }, 0);
+  const totalFarmerLoans = farmers.reduce((s, f) => s + Math.max(0, trueBalance(f)), 0);
+  const totalBuyerDue    = buyers.reduce((s, b)  => s + Math.max(0, trueBalance(b)), 0);
+  const totalAadat       = saleBills.reduce((s, b) => s + (b.mpc_amount || 0), 0);
 
-  const totalBuyerDue = buyers.reduce((s, b) => {
-    const bal = partyBalance(b.id);
-    return s + (bal > 0 ? bal : 0); // positive = buyer owes us
-  }, 0);
-
-  const totalAadat = saleBills.reduce((s, b) => s + (b.mpc_amount || 0), 0);
-
-  const today = new Date().toISOString().split("T")[0];
+  const today      = new Date().toISOString().split("T")[0];
   const todayBills = purchaseBills.filter(b => b.date === today);
-
   const recentBills = [...purchaseBills].sort((a, b) => b.date?.localeCompare(a.date)).slice(0, 4);
 
-  const firmName = settings?.firm_name || "B.R. and Sons";
-  const gstin    = settings?.gstin || "06ABZPG8490J1ZT";
+  const firmName  = settings?.firm_name || "Aapki Firm";
+  const gstin     = settings?.gstin || "";
+  const mandiName = settings?.mandi_name || "";
+  const location  = [mandiName, settings?.mandi_city].filter(Boolean).join(", ");
 
   return (
     <Shell>
@@ -34,9 +35,13 @@ export default function Home({ nav }) {
           <div>
             <p style={{ color: "rgba(255,255,255,0.72)", fontSize: 13 }}>Radhe Radhe 🙏</p>
             <h2 style={{ fontFamily: "'Baloo 2'", fontWeight: 800, fontSize: 22, color: C.white, marginTop: 2 }}>{firmName}</h2>
-            <p style={{ color: "rgba(255,255,255,0.72)", fontSize: 12, marginTop: 2 }}>Taraori Anaj Mandi, Karnal · {gstin}</p>
+            {(location || gstin) && (
+              <p style={{ color: "rgba(255,255,255,0.72)", fontSize: 12, marginTop: 2 }}>
+                {[location, gstin].filter(Boolean).join(" · ")}
+              </p>
+            )}
           </div>
-          <Tag color={C.white} bg="rgba(255,255,255,0.18)">2023–24</Tag>
+          <Tag color={C.white} bg="rgba(255,255,255,0.18)">{currentFY()}</Tag>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 18 }}>

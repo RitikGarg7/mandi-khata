@@ -1,21 +1,53 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 import { encrypt } from "../lib/crypto";
 import { db } from "../lib/supabase";
 import { useApp } from "../context/AppContext";
 import { Shell, C, Btn, Field, Spinner } from "../components/ui";
 
+// Auth flow:
+// New user      → Google Sign-In → set 4-digit PIN → firm details → Home
+// Every day     → Enter PIN → Home  (Google session persists in browser)
+// Forgot PIN    → Google Sign-In again → set new PIN → Home
+
 export default function Login({ onLoggedIn, pendingSession }) {
   const { unlock, loadAll } = useApp();
-  const [step, setStep] = useState(pendingSession ? "pin" : "landing");
+  const [step, setStep] = useState("loading");
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
   const [isNew, setIsNew] = useState(false);
-  const [authSession, setAuthSession] = useState(pendingSession || null);
+  const [authSession, setAuthSession] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [firmName, setFirmName] = useState("");
+  const [mandiName, setMandiName] = useState("");
+  const [mandiCity, setMandiCity] = useState("");
   const [gstin, setGstin] = useState("");
+
+  useEffect(() => {
+    // If redirected back from Google OAuth, pendingSession is set
+    if (pendingSession) {
+      setAuthSession(pendingSession);
+      // Check if this user has settings already (returning user) or is new
+      supabase.from("settings").select("id").maybeSingle().then(({ data }) => {
+        setIsNew(!data);
+        setStep("pin");
+      });
+      return;
+    }
+    // Check for existing session (user opened app again same day)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        setAuthSession(session);
+        supabase.from("settings").select("id").maybeSingle().then(({ data }) => {
+          setIsNew(!data);
+          setStep("pin");
+        });
+      } else {
+        setStep("google"); // No session — need Google sign-in
+      }
+    });
+  }, [pendingSession]);
 
   const handleGoogle = async () => {
     setBusy(true);
@@ -26,52 +58,36 @@ export default function Login({ onLoggedIn, pendingSession }) {
         options: { redirectTo: window.location.origin },
       });
       if (error) throw error;
+      // Page will redirect to Google — no code runs after this
     } catch (e) {
       setError(e.message);
       setBusy(false);
     }
   };
 
-  // After OAuth redirect, supabase calls onAuthStateChange in App.jsx
-  // which calls onLoggedIn with the session + pin still needed.
-  // Here we handle the PIN step directly if session is passed.
-  const handleGoogleDone = (session) => {
-    setAuthSession(session);
-    setStep("pin");
-  };
-
-  const tapDigit = (d) => {
-    const next = pin + d;
+  const tapDigit = (d, target) => {
+    const current = target === "confirm" ? confirmPin : pin;
+    const setter  = target === "confirm" ? setConfirmPin : setPin;
+    const next = current + d;
     if (next.length > 4) return;
-    setPin(next);
+    setter(next);
     if (next.length === 4) {
-      setTimeout(() => handlePinComplete(next), 250);
-    }
-  };
-
-  const tapConfirmDigit = (d) => {
-    const next = confirmPin + d;
-    if (next.length > 4) return;
-    setConfirmPin(next);
-    if (next.length === 4) {
-      setTimeout(() => handleConfirmComplete(next), 250);
+      setTimeout(() => {
+        if (target === "confirm") handleConfirmComplete(next);
+        else handlePinComplete(next);
+      }, 250);
     }
   };
 
   const handlePinComplete = (p) => {
-    if (isNew) {
-      setStep("confirm_pin");
-    } else {
-      doUnlock(authSession, p);
-    }
+    if (isNew) setStep("confirm_pin");
+    else doUnlock(authSession, p);
   };
 
   const handleConfirmComplete = (p) => {
     if (p !== pin) {
       setError("PIN match nahi hua. Dobara try karein.");
-      setPin("");
-      setConfirmPin("");
-      setStep("pin");
+      setPin(""); setConfirmPin(""); setStep("pin");
       return;
     }
     setStep("setup");
@@ -97,11 +113,11 @@ export default function Login({ onLoggedIn, pendingSession }) {
     setBusy(true);
     try {
       const key = await unlock(authSession, pin);
-      // Save initial settings
       const settingsData = {
         firm_name: firmName.trim(),
         gstin: gstin.trim(),
-        mandi_name: "Taraori Anaj Mandi",
+        mandi_name: mandiName.trim(),
+        mandi_city: mandiCity.trim(),
         mpc_rate_default: 2.5,
         auc_rate_default: 0.1,
         labour_rate_default: 7.88,
@@ -127,16 +143,20 @@ export default function Login({ onLoggedIn, pendingSession }) {
     </div>
   );
 
-  const PinPad = ({ onTap, onBack }) => (
+  const PinPad = ({ target }) => (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, maxWidth: 260, margin: "0 auto" }}>
       {[1,2,3,4,5,6,7,8,9].map(d => (
-        <button key={d} onClick={() => onTap(String(d))}
-          style={{ background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "17px 0", fontSize: 22, fontWeight: 600, color: C.ink, fontFamily: "'Baloo 2'" }}>{d}</button>
+        <button key={d} onClick={() => tapDigit(String(d), target)}
+          style={{ background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "17px 0", fontSize: 22, fontWeight: 600, color: C.ink, fontFamily: "'Baloo 2'" }}>
+          {d}
+        </button>
       ))}
       <div />
-      <button onClick={() => onTap("0")}
-        style={{ background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "17px 0", fontSize: 22, fontWeight: 600, color: C.ink, fontFamily: "'Baloo 2'" }}>0</button>
-      <button onClick={onBack}
+      <button onClick={() => tapDigit("0", target)}
+        style={{ background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "17px 0", fontSize: 22, fontWeight: 600, color: C.ink, fontFamily: "'Baloo 2'" }}>
+        0
+      </button>
+      <button onClick={() => target === "confirm" ? setConfirmPin(p => p.slice(0,-1)) : setPin(p => p.slice(0,-1))}
         style={{ background: "none", border: "none", fontSize: 20, color: C.inkMid }}>⌫</button>
     </div>
   );
@@ -156,53 +176,69 @@ export default function Login({ onLoggedIn, pendingSession }) {
           </div>
         )}
 
-        {busy && <Spinner />}
+        {(busy || step === "loading") && <Spinner />}
 
-        {!busy && step === "landing" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <Btn onClick={handleGoogle}>Google se Login karein</Btn>
-            <button
-              onClick={() => { setIsNew(true); setStep("google_first"); }}
-              style={{ background: "none", border: "none", color: C.inkLight, fontSize: 13, marginTop: 4 }}>
-              Pehli baar? Naya account banayein →
+        {/* Google sign-in */}
+        {!busy && step === "google" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16, alignItems: "center" }}>
+            <p style={{ fontSize: 14, color: C.inkMid, textAlign: "center", lineHeight: 1.6 }}>
+              Apne Google account se login karein.<br />
+              <span style={{ fontSize: 12, color: C.inkLight }}>Roz PIN se khuljega — Google sirf pehli baar.</span>
+            </p>
+            <button onClick={handleGoogle}
+              style={{ display: "flex", alignItems: "center", gap: 12, background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "14px 24px", fontSize: 15, fontWeight: 600, color: C.ink, cursor: "pointer", width: "100%", justifyContent: "center" }}>
+              <svg width="20" height="20" viewBox="0 0 48 48">
+                <path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.5 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.6-.4-3.9z"/>
+                <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19.1 13 24 13c3.1 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.5 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>
+                <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.4 35.5 26.8 36.5 24 36.5c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 40 16.2 44 24 44z"/>
+                <path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.3 5.7l6.2 5.2C37 38.2 44 33 44 24c0-1.3-.1-2.6-.4-3.9z"/>
+              </svg>
+              Google se Login Karein
             </button>
           </div>
         )}
 
-        {!busy && step === "google_first" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <p style={{ fontSize: 14, color: C.inkMid, marginBottom: 8, textAlign: "center" }}>
-              Pehle Google se sign in karein, phir naya PIN set karenge.
-            </p>
-            <Btn onClick={handleGoogle}>Google se Continue karein</Btn>
-          </div>
-        )}
-
+        {/* Daily PIN entry */}
         {!busy && step === "pin" && (
           <div style={{ textAlign: "center" }}>
-            <p style={{ fontSize: 15, fontWeight: 600, color: C.inkMid, marginBottom: 20 }}>
-              {isNew ? "Naya 4-digit PIN chunein" : "4-digit PIN daalnein"}
+            <p style={{ fontSize: 15, fontWeight: 600, color: C.inkMid, marginBottom: 8 }}>
+              {isNew ? "Naya 4-digit PIN chunein" : "PIN daalnein"}
             </p>
+            {!isNew && authSession && (
+              <p style={{ fontSize: 12, color: C.inkLight, marginBottom: 16 }}>
+                {authSession.user?.user_metadata?.full_name || authSession.user?.email}
+              </p>
+            )}
             <PinDots len={pin.length} />
-            <PinPad onTap={tapDigit} onBack={() => setPin(p => p.slice(0, -1))} />
+            <PinPad target="main" />
+            <button onClick={() => { setStep("google"); setPin(""); }}
+              style={{ marginTop: 20, background: "none", border: "none", color: C.inkLight, fontSize: 12, cursor: "pointer" }}>
+              PIN bhool gaye? Google se login karein →
+            </button>
           </div>
         )}
 
+        {/* Confirm PIN (new users) */}
         {!busy && step === "confirm_pin" && (
           <div style={{ textAlign: "center" }}>
-            <p style={{ fontSize: 15, fontWeight: 600, color: C.inkMid, marginBottom: 20 }}>PIN dobara daalnein (confirm)</p>
+            <p style={{ fontSize: 15, fontWeight: 600, color: C.inkMid, marginBottom: 20 }}>
+              PIN dobara daalnein (confirm)
+            </p>
             <PinDots len={confirmPin.length} />
-            <PinPad onTap={tapConfirmDigit} onBack={() => setConfirmPin(p => p.slice(0, -1))} />
+            <PinPad target="confirm" />
           </div>
         )}
 
+        {/* Firm setup (new users only) */}
         {!busy && step === "setup" && (
           <div>
             <p style={{ fontSize: 15, fontWeight: 600, color: C.inkMid, marginBottom: 20, textAlign: "center" }}>
               Apni dukaan ki jaankari bharein
             </p>
             <Field label="Firm ka Naam" value={firmName} onChange={setFirmName} placeholder="Jaise: B.R. and Sons" required />
-            <Field label="GSTIN" value={gstin} onChange={setGstin} placeholder="15 digit GSTIN (agar ho toh)" />
+            <Field label="Mandi ka Naam" value={mandiName} onChange={setMandiName} placeholder="Jaise: Taraori Anaj Mandi" />
+            <Field label="Shehar / Zila" value={mandiCity} onChange={setMandiCity} placeholder="Jaise: Karnal" />
+            <Field label="GSTIN (optional)" value={gstin} onChange={setGstin} placeholder="15 digit GSTIN" />
             <Btn variant="green" onClick={handleSetupSave}>✓ Shuru Karein</Btn>
           </div>
         )}

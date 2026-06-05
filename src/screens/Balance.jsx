@@ -3,53 +3,50 @@ import { useApp } from "../context/AppContext";
 import { Shell, C, Card, TopBar, BottomNav, Tag, Row, Divider, fmt } from "../components/ui";
 
 export default function Balance({ nav }) {
-  const { parties, purchaseBills, saleBills, payments, ledger, partyBalance } = useApp();
+  const { parties, purchaseBills, saleBills, payments, ledger, trueBalance, computePartyInterest } = useApp();
   const [tab, setTab] = useState("pl");
 
-  // Income
-  const totalMpc      = saleBills.reduce((s, b) => s + (b.mpc_amount || 0), 0);
-  const totalAuc      = saleBills.reduce((s, b) => s + (b.auc_amount || 0), 0);
-  const totalLabourIn = saleBills.reduce((s, b) => s + (b.labour_amount || 0), 0);
-  const totalIncome   = totalMpc + totalAuc + totalLabourIn;
+  // Interest accrued: per-entry running-balance method (each transaction's amount × rate × days)
+  const interestParties = parties.filter(p => (p.interest_rate || 0) > 0);
+  const interestReceivable = interestParties.reduce((s, p) => s + computePartyInterest(p), 0);
 
-  // Expenses: sum of payments to expense-type parties
-  const expenseParties = parties.filter(p => p.type === "Expense").map(p => p.id);
-  const totalExpenses  = payments
-    .filter(p => expenseParties.includes(p.party_id) && ["bank_payment","cash_payment"].includes(p.type))
-    .reduce((s, p) => s + (p.amount || 0), 0);
-  const netProfit = totalIncome - totalExpenses;
+  // Income — only Adat (MPC commission) + interest belong to the owner
+  const totalAadat  = saleBills.reduce((s, b) => s + (b.mpc_amount || 0), 0);
+  const totalIncome = totalAadat + interestReceivable;
+
+  // Dalali/Mazdoori payable: driven by the actual ledger on those expense parties.
+  // Each Form I/J creates a credit entry; each payout creates a debit. trueBalance < 0 = we owe them.
+  const dalaliParties   = parties.filter(p => p.type === "Expense" && p.expense_category === "Dalali");
+  const mazdooriParties = parties.filter(p => p.type === "Expense" && ["Mazdoori","Labour"].includes(p.expense_category));
+  const dalaliPayable   = dalaliParties.reduce((s, p)   => s + Math.max(0, -trueBalance(p)), 0);
+  const mazdooriPayable = mazdooriParties.reduce((s, p) => s + Math.max(0, -trueBalance(p)), 0);
+
+  const netProfit = totalIncome;
 
   // Assets
-  const farmers    = parties.filter(p => p.type === "Farmer");
-  const buyers     = parties.filter(p => p.type === "Customer");
-  const bankParts  = parties.filter(p => p.type === "Bank");
+  const farmers   = parties.filter(p => p.type === "Farmer");
+  const buyers    = parties.filter(p => p.type === "Customer");
+  const bankParts = parties.filter(p => p.type === "Bank");
 
-  const farmerLoans = farmers.reduce((s, f) => {
-    const ob = f.opening_balance || 0;
-    const bal = partyBalance(f.id);
-    return s + Math.max(0, ob - bal); // simplified: opening + net debit
-  }, 0);
+  const farmerLoans = farmers.reduce((s, f) => s + Math.max(0, trueBalance(f)), 0);
+  const buyerDue    = buyers.reduce((s, b)  => s + Math.max(0, trueBalance(b)), 0);
 
-  const buyerDue = buyers.reduce((s, b) => {
-    const bal = partyBalance(b.id);
-    return s + Math.max(0, bal);
-  }, 0);
-
-  const cashBal = payments
-    .filter(p => p.type === "cash_receipt")
-    .reduce((s, p) => s + (p.amount || 0), 0)
+  const cashBal =
+    payments.filter(p => p.type === "cash_receipt").reduce((s, p) => s + (p.amount || 0), 0)
     - payments.filter(p => p.type === "cash_payment").reduce((s, p) => s + (p.amount || 0), 0);
 
-  const bankBal = bankParts.reduce((s, b) => {
-    const bal = partyBalance(b.id);
-    return s + bal;
-  }, 0);
+  // Bank balance: opening balances of Bank parties + all bank receipts - all bank payments
+  // (payments are stored against counterparty, not bank party, so partyBalance(bank.id) is always 0)
+  const bankOpeningBal = bankParts.reduce((s, b) => s + (b.opening_balance || 0), 0);
+  const bankBal = bankOpeningBal
+    + payments.filter(p => p.type === "bank_receipt").reduce((s, p) => s + (p.amount || 0), 0)
+    - payments.filter(p => p.type === "bank_payment").reduce((s, p) => s + (p.amount || 0), 0);
 
-  const totalAssets = farmerLoans + buyerDue + Math.max(0, cashBal) + Math.max(0, bankBal);
+  const totalAssets = farmerLoans + buyerDue + Math.max(0, cashBal) + Math.max(0, bankBal) + interestReceivable;
 
   // Liabilities
-  const gstPay = saleBills.reduce((s, b) => s + (b.cgst_amount || 0) + (b.sgst_amount || 0) + (b.igst_amount || 0), 0);
-  const totalLiab = gstPay;
+  const gstPay    = saleBills.reduce((s, b) => s + (b.cgst_amount || 0) + (b.sgst_amount || 0) + (b.igst_amount || 0), 0);
+  const totalLiab = gstPay + dalaliPayable + mazdooriPayable;
   const capital   = totalAssets - totalLiab;
 
   return (
@@ -81,27 +78,17 @@ export default function Balance({ nav }) {
             </div>
 
             <Card style={{ marginBottom: 10 }}>
-              <p style={{ fontSize: 12, fontWeight: 700, color: C.green, marginBottom: 10 }}>💰 Aamdan (Income)</p>
-              <Row label={`Aadat/MPC (${saleBills.length} bills)`} amount={totalMpc} />
-              <Row label="AUC / Dalali" amount={totalAuc} />
-              <Row label="Mazdoori income" amount={totalLabourIn} />
-              <Row label="Kul Aamdan" amount={totalIncome} bold color={C.green} />
+              <p style={{ fontSize: 12, fontWeight: 700, color: C.green, marginBottom: 10 }}>💰 Aamdani (Income)</p>
+              <Row label={`Aadat/MPC (${saleBills.length} bills)`} amount={totalAadat} />
+              <Row label="Byaaj Aamdani (accrued)" amount={interestReceivable} />
+              <Row label="Kul Aamdani" amount={totalIncome} bold color={C.green} />
             </Card>
 
-            <Card style={{ marginBottom: 10 }}>
-              <p style={{ fontSize: 12, fontWeight: 700, color: C.red, marginBottom: 10 }}>💸 Kharche (Expenses)</p>
-              {totalExpenses === 0 ? (
-                <p style={{ fontSize: 12, color: C.inkLight }}>Koi expense entries nahi</p>
-              ) : (
-                <Row label="Kul Kharche" amount={totalExpenses} bold color={C.red} />
-              )}
-            </Card>
-
-            <Card style={{ background: netProfit >= 0 ? C.greenLight : "#FDF0EE", border: `1.5px solid ${netProfit >= 0 ? C.green : C.red}` }}>
-              <Row label="Kul Aamdan" amount={totalIncome} />
-              <Row label="Kul Kharche (−)" amount={totalExpenses} color={C.red} />
-              <Row label="Net Munafa" amount={Math.abs(netProfit)} bold color={netProfit >= 0 ? C.green : C.red} />
-            </Card>
+            <div style={{ padding: "10px 14px", background: "#F5F5F5", borderRadius: 10 }}>
+              <p style={{ fontSize: 11, color: C.inkLight, lineHeight: 1.5 }}>
+                Dalali aur Mazdoori — buyer se li jaati hai, baad mein deni hoti hai. Yeh owner ki aamdani nahi. Balance Sheet mein liability ke roop mein dikhaya gaya hai.
+              </p>
+            </div>
           </>
         )}
 
@@ -111,6 +98,7 @@ export default function Balance({ nav }) {
               <p style={{ fontSize: 12, fontWeight: 700, color: C.green, marginBottom: 10 }}>🏦 Sampatti (Assets)</p>
               <Row label="Kisan loan outstanding" amount={farmerLoans} />
               <Row label="Buyer se lena (Receivable)" amount={buyerDue} />
+              <Row label="Byaaj lena baaki (Accrued)" amount={interestReceivable} />
               <Row label="Haath mein naqdh" amount={Math.max(0, cashBal)} />
               <Row label="Bank balance" amount={Math.max(0, bankBal)} />
               <Row label="Kul Sampatti" amount={totalAssets} bold color={C.green} />
@@ -118,7 +106,9 @@ export default function Balance({ nav }) {
 
             <Card style={{ marginBottom: 10 }}>
               <p style={{ fontSize: 12, fontWeight: 700, color: C.red, marginBottom: 10 }}>📋 Denadari (Liabilities)</p>
-              <Row label="GST Dena baaki" amount={gstPay} />
+              <Row label="GST Dena Baaki" amount={gstPay} />
+              <Row label="Dalali Dena Baaki (net)" amount={dalaliPayable} />
+              <Row label="Mazdoori Dena Baaki (net)" amount={mazdooriPayable} />
               <Row label="Kul Denadari" amount={totalLiab} bold color={C.red} />
             </Card>
 
@@ -135,11 +125,12 @@ export default function Balance({ nav }) {
           <>
             <Card style={{ marginBottom: 10 }}>
               <p style={{ fontSize: 12, fontWeight: 700, color: C.blue, marginBottom: 10 }}>🧾 GST Summary</p>
-              <Row label="GST Taxable (MPC + AUC)" amount={totalMpc + totalAuc} />
+              <Row label="GST Taxable (MPC + AUC)" amount={saleBills.reduce((s, b) => s + (b.gst_taxable || 0), 0)} />
               <Divider />
-              <Row label="CGST @ 9%" amount={(totalMpc + totalAuc) * 0.09} indent />
-              <Row label="SGST @ 9%" amount={(totalMpc + totalAuc) * 0.09} indent />
-              <Row label="Kul GST (Intrastate)" amount={gstPay} bold />
+              <Row label="CGST @ 9%" amount={saleBills.reduce((s, b) => s + (b.cgst_amount || 0), 0)} indent />
+              <Row label="SGST @ 9%" amount={saleBills.reduce((s, b) => s + (b.sgst_amount || 0), 0)} indent />
+              <Row label="IGST @ 18%" amount={saleBills.reduce((s, b) => s + (b.igst_amount || 0), 0)} indent />
+              <Row label="Kul GST" amount={gstPay} bold />
             </Card>
 
             <Card style={{ marginBottom: 10 }}>
