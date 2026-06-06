@@ -1,4 +1,5 @@
 // Shared design system — tokens + primitive components
+import { useState } from "react";
 
 export const C = {
   saffron: "#D4580A",
@@ -81,6 +82,47 @@ export function Btn({ children, onClick, variant = "primary", style, disabled, t
   );
 }
 
+function ModalSelect({ value, onChange, options, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find(o => (o.value ?? o) === value);
+  const displayLabel = selected ? (selected.label ?? selected) : null;
+
+  return (
+    <>
+      <div onClick={() => setOpen(true)}
+        style={{ width: "100%", padding: "12px 16px", borderRadius: 10, border: `1.5px solid ${C.border}`, background: C.white, fontSize: 14, color: displayLabel ? C.ink : C.inkLight, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none" }}>
+        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{displayLabel || placeholder || "Chunein..."}</span>
+        <span style={{ color: C.inkLight, fontSize: 11, marginLeft: 8, flexShrink: 0 }}>▾</span>
+      </div>
+
+      {open && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 2000, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+          <div onClick={() => setOpen(false)} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)" }} />
+          <div style={{ position: "relative", background: C.white, borderRadius: "20px 20px 0 0", maxHeight: "65vh", display: "flex", flexDirection: "column" }}>
+            <div style={{ padding: "12px 0 4px", textAlign: "center", flexShrink: 0 }}>
+              <div style={{ width: 40, height: 4, borderRadius: 2, background: C.border, margin: "0 auto" }} />
+            </div>
+            <div style={{ overflowY: "auto", paddingBottom: 28 }}>
+              {options.map(o => {
+                const val = o.value ?? o;
+                const lbl = o.label ?? o;
+                const isSelected = val === value;
+                return (
+                  <div key={val} onClick={() => { onChange(val); setOpen(false); }}
+                    style={{ padding: "14px 20px", fontSize: 15, fontWeight: isSelected ? 700 : 400, color: isSelected ? C.saffron : C.ink, background: isSelected ? C.saffronLight : "transparent", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${C.border}` }}>
+                    <span>{lbl}</span>
+                    {isSelected && <span style={{ fontSize: 14, color: C.saffron }}>✓</span>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function Field({ label, value, onChange, type = "text", placeholder, prefix, suffix, options, hint, required, readOnly, rows }) {
   return (
     <div style={{ marginBottom: 14 }}>
@@ -92,11 +134,7 @@ export function Field({ label, value, onChange, type = "text", placeholder, pref
       <div style={{ position: "relative" }}>
         {prefix && <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.inkLight, fontSize: 14, fontWeight: 600, pointerEvents: "none" }}>{prefix}</span>}
         {options ? (
-          <select value={value} onChange={e => onChange(e.target.value)}
-            style={{ width: "100%", padding: "12px 16px", borderRadius: 10, border: `1.5px solid ${C.border}`, background: C.white, fontSize: 14, color: value ? C.ink : C.inkLight, appearance: "none" }}>
-            <option value="">{placeholder || "Chunein..."}</option>
-            {options.map(o => <option key={o.value ?? o} value={o.value ?? o}>{o.label ?? o}</option>)}
-          </select>
+          <ModalSelect value={value} onChange={onChange} options={options} placeholder={placeholder} />
         ) : rows ? (
           <textarea value={value} onChange={e => onChange && onChange(e.target.value)} placeholder={placeholder} readOnly={readOnly} rows={rows}
             style={{ width: "100%", padding: "12px 16px", borderRadius: 10, border: `1.5px solid ${C.border}`, background: readOnly ? C.cream : C.white, fontSize: 14, color: C.ink, resize: "none" }} />

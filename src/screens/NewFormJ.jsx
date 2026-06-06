@@ -22,16 +22,15 @@ export default function NewFormJ({ onBack, nav, editData }) {
     weight:        String(editData.weight   || ""),
     rate:          String(editData.rate     || ""),
     labour_rate:   String(editData.labour_rate || "5.32"),
-    dami:          String(editData.dami_amount || ""),
     cess:          String(editData.cess_amount || ""),
-    bonus:         String(editData.bonus    || ""),
+    transport:     String(editData.transport_amount || ""),
     loan_recovered:String(editData.loan_recovered || ""),
     notes:         editData.notes           || "",
   } : {
     party_id: "", date: new Date().toISOString().split("T")[0],
     series: "Form J3", commodity: "",
     bags: "", weight: "", rate: "",
-    labour_rate: "5.32", dami: "", cess: "", bonus: "", loan_recovered: "", notes: "",
+    labour_rate: "5.32", cess: "", transport: "", loan_recovered: "", notes: "",
   });
   const s = (k, v) => setF(p => ({ ...p, [k]: v }));
 
@@ -41,18 +40,17 @@ export default function NewFormJ({ onBack, nav, editData }) {
     return bills.length > 0 ? Math.max(...bills.map(b => b.bill_number || 0)) + 1 : 1;
   };
 
-  const bags      = parseFloat(f.bags) || 0;
-  const weight    = parseFloat(f.weight) || 0;
-  const rate      = parseFloat(f.rate) || 0;
-  const labRate   = parseFloat(f.labour_rate) || 5.32;
-  const damiAmt   = parseFloat(f.dami) || 0;
-  const cessAmt   = parseFloat(f.cess) || 0;
-  const bonusAmt  = parseFloat(f.bonus) || 0;
+  const bags         = parseFloat(f.bags) || 0;
+  const weight       = parseFloat(f.weight) || 0;
+  const rate         = parseFloat(f.rate) || 0;
+  const labRate      = parseFloat(f.labour_rate) || 5.32;
+  const cessAmt      = parseFloat(f.cess) || 0;
+  const transportAmt = parseFloat(f.transport) || 0;
 
-  const gross_amount  = weight * rate;
-  const labour_amount = bags * labRate;
-  const total_deductions = labour_amount + damiAmt + cessAmt;
-  const net_payable   = gross_amount - total_deductions + bonusAmt;
+  const gross_amount     = weight * rate;
+  const labour_amount    = bags * labRate;
+  const total_deductions = labour_amount + cessAmt + transportAmt;
+  const net_payable      = gross_amount - total_deductions;
 
   const selectedFarmer = farmers.find(ff => ff.id === f.party_id);
   const farmerBal = selectedFarmer ? partyBalance(selectedFarmer.id) : 0;
@@ -81,9 +79,8 @@ export default function NewFormJ({ onBack, nav, editData }) {
         gross_amount,
         labour_rate: labRate,
         labour_amount,
-        dami_amount: damiAmt,
         cess_amount: cessAmt,
-        bonus: bonusAmt,
+        transport_amount: transportAmt,
         net_payable,
         loan_recovered: loanRecoveredAmt,
         final_payment: finalPayment,
@@ -159,13 +156,13 @@ export default function NewFormJ({ onBack, nav, editData }) {
           <p style={{ fontSize: 12, fontWeight: 700, color: C.inkMid, marginBottom: 10 }}>📦 Maal ki Jaankari</p>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <Field label="Bori (Bags)" value={f.bags} onChange={v => s("bags", v)} type="number" placeholder="0" required />
-            <Field label="Wazan (Quintal)" value={f.weight} onChange={v => s("weight", v)} type="number" placeholder="0" required />
+            <Field label="Wazan (KG)" value={f.weight} onChange={v => s("weight", v)} type="number" placeholder="0" required />
           </div>
           <Field label="Bhao (₹ per Quintal)" value={f.rate} onChange={v => s("rate", v)} type="number" prefix="₹" suffix="/qtl" placeholder="0" required />
           {gross_amount > 0 && (
             <div style={{ background: C.greenLight, borderRadius: 8, padding: "12px 14px", marginTop: 6 }}>
               <div style={{ fontSize: 11, color: C.inkLight, marginBottom: 2 }}>
-                {bags} bori × {weight} qtl × ₹{rate}/qtl
+                {bags} bori × {weight} kg × ₹{rate}/qtl
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: C.inkMid }}>Kul Raqam</span>
@@ -178,11 +175,10 @@ export default function NewFormJ({ onBack, nav, editData }) {
         <Card style={{ marginBottom: 12 }}>
           <p style={{ fontSize: 12, fontWeight: 700, color: C.inkMid, marginBottom: 10 }}>💸 Kharche (Kisan se katenge)</p>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <Field label="Utaari (₹/bori)" value={f.labour_rate} onChange={v => s("labour_rate", v)} type="number" prefix="₹" hint="Default ₹5.32/bori" />
-            <Field label="Dami/Dum (₹)" value={f.dami} onChange={v => s("dami", v)} type="number" prefix="₹" placeholder="0" />
+            <Field label="Labour (₹/bori)" value={f.labour_rate} onChange={v => s("labour_rate", v)} type="number" prefix="₹" hint="Default ₹5.32/bori" />
             <Field label="Cess (₹)" value={f.cess} onChange={v => s("cess", v)} type="number" prefix="₹" placeholder="0" />
-            <Field label="Bonus (₹)" value={f.bonus} onChange={v => s("bonus", v)} type="number" prefix="₹" placeholder="0" hint="Kisan ko extra dena" />
           </div>
+          <Field label="Transport (₹)" value={f.transport} onChange={v => s("transport", v)} type="number" prefix="₹" placeholder="0" />
           {total_deductions > 0 && (
             <div style={{ background: "#FDF0EE", borderRadius: 8, padding: "10px 14px", marginTop: 6, display: "flex", justifyContent: "space-between" }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: C.inkMid }}>Kul Kharche</span>
@@ -211,7 +207,6 @@ export default function NewFormJ({ onBack, nav, editData }) {
             <p style={{ fontSize: 12, fontWeight: 700, color: C.pink, marginBottom: 8 }}>📊 Grand Total — Kisan ko milega</p>
             <Row label="Kul Raqam" amount={gross_amount} />
             <Row label={`Kul Kharche (−)`} amount={total_deductions} color={C.red} />
-            {bonusAmt > 0 && <Row label="Bonus (+)" amount={bonusAmt} color={C.green} />}
             <Row label="Net Payable (Kisan ko)" amount={net_payable} bold color={C.green} />
 
             {loanBaaki > 0 && (

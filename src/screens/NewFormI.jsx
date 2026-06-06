@@ -27,7 +27,6 @@ export default function NewFormI({ onBack, nav, editData }) {
     mpc_rate:        String(editData.mpc_rate || "2.5"),
     auc_rate:        String(editData.auc_rate || "0.1"),
     labour_rate:     String(editData.labour_rate || "7.88"),
-    dami_amount:     String(editData.dami_amount || ""),
     buyer_state:     editData.buyer_state     || "Haryana",
     notes:           editData.notes           || "",
   } : {
@@ -36,7 +35,7 @@ export default function NewFormI({ onBack, nav, editData }) {
     series: "Form I2", commodity: "",
     bags: "", weight: "", rate: "",
     mpc_rate: "2.5", auc_rate: "0.1", labour_rate: "7.88",
-    dami_amount: "", buyer_state: "Haryana", notes: "",
+    buyer_state: "Haryana", notes: "",
   });
   const s = (k, v) => setF(p => ({ ...p, [k]: v }));
 
@@ -52,7 +51,6 @@ export default function NewFormI({ onBack, nav, editData }) {
   const mpcRate    = parseFloat(f.mpc_rate) || 2.5;
   const aucRate    = parseFloat(f.auc_rate) || 0.1;
   const labRate    = parseFloat(f.labour_rate) || 7.88;
-  const damiAmt    = parseFloat(f.dami_amount) || 0;
 
   const gross_amount  = weight * rate;
   const mpc_amount    = gross_amount * mpcRate / 100;
@@ -64,7 +62,7 @@ export default function NewFormI({ onBack, nav, editData }) {
   const sgst_amount   = isInter ? 0 : gst_taxable * 0.09;
   const igst_amount   = isInter ? gst_taxable * 0.18 : 0;
   const total_gst     = cgst_amount + sgst_amount + igst_amount;
-  const total_bill    = gross_amount + mpc_amount + auc_amount + labour_amount + damiAmt + total_gst;
+  const total_bill    = gross_amount + mpc_amount + auc_amount + labour_amount + total_gst;
 
   const pendingPBills = purchaseBills.filter(b => !b.is_complete);
 
@@ -93,7 +91,6 @@ export default function NewFormI({ onBack, nav, editData }) {
         auc_amount,
         labour_rate: labRate,
         labour_amount,
-        dami_amount: damiAmt,
         gst_taxable,
         cgst_rate: isInter ? 0 : 9,
         cgst_amount,
@@ -180,12 +177,12 @@ export default function NewFormI({ onBack, nav, editData }) {
           <p style={{ fontSize: 12, fontWeight: 700, color: C.inkMid, marginBottom: 10 }}>📦 Maal ki Jaankari</p>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <Field label="Bori (Bags)" value={f.bags} onChange={v => s("bags", v)} type="number" placeholder="0" required />
-            <Field label="Wazan (Quintal)" value={f.weight} onChange={v => s("weight", v)} type="number" placeholder="0" required />
+            <Field label="Wazan (KG)" value={f.weight} onChange={v => s("weight", v)} type="number" placeholder="0" required />
           </div>
           <Field label="Bhao (₹ per Quintal)" value={f.rate} onChange={v => s("rate", v)} type="number" prefix="₹" suffix="/qtl" placeholder="0" required />
           {gross_amount > 0 && (
             <div style={{ background: C.cream, borderRadius: 8, padding: "12px 14px", marginTop: 6 }}>
-              <div style={{ fontSize: 11, color: C.inkLight, marginBottom: 2 }}>{weight} qtl × ₹{rate}/qtl</div>
+              <div style={{ fontSize: 11, color: C.inkLight, marginBottom: 2 }}>{weight} kg × ₹{rate}/qtl</div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: C.inkMid }}>Kul Raqam</span>
                 <span style={{ fontFamily: "'Baloo 2'", fontWeight: 800, fontSize: 20, color: C.ink }}>₹{fmt(gross_amount)}</span>
@@ -197,17 +194,16 @@ export default function NewFormI({ onBack, nav, editData }) {
         <Card style={{ marginBottom: 12 }}>
           <p style={{ fontSize: 12, fontWeight: 700, color: C.inkMid, marginBottom: 10 }}>💸 Mandi ke Kharche (Buyer se)</p>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <Field label="Aadat (MPC %)" value={f.mpc_rate} onChange={v => s("mpc_rate", v)} type="number" suffix="%" hint="Aapki kamai" />
+            <Field label="Aadat (Dami %)" value={f.mpc_rate} onChange={v => s("mpc_rate", v)} type="number" suffix="%" hint="Aapki kamai" />
             <Field label="Dalali (AUC %)" value={f.auc_rate} onChange={v => s("auc_rate", v)} type="number" suffix="%" hint="Dalali khata" />
-            <Field label="Mazdoori (₹/bori)" value={f.labour_rate} onChange={v => s("labour_rate", v)} type="number" prefix="₹" hint="Default ₹7.88" />
-            <Field label="Dami (₹)" value={f.dami_amount} onChange={v => s("dami_amount", v)} type="number" prefix="₹" placeholder="0" />
+            <Field label="Labour (₹/bori)" value={f.labour_rate} onChange={v => s("labour_rate", v)} type="number" prefix="₹" hint="Default ₹7.88" />
           </div>
           {gross_amount > 0 && (
             <div style={{ background: C.greenLight, borderRadius: 8, padding: "10px 14px", marginTop: 6 }}>
               <div style={{ fontSize: 11, color: C.green, marginBottom: 2 }}>💰 Aapki Aadat: ₹{fmt(mpc_amount)} · AUC: ₹{fmt(auc_amount)}</div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: C.inkMid }}>Kul Kharche</span>
-                <span style={{ fontFamily: "'Baloo 2'", fontWeight: 700, fontSize: 15, color: C.inkMid }}>+ ₹{fmt(mpc_amount + auc_amount + labour_amount + damiAmt)}</span>
+                <span style={{ fontFamily: "'Baloo 2'", fontWeight: 700, fontSize: 15, color: C.inkMid }}>+ ₹{fmt(mpc_amount + auc_amount + labour_amount)}</span>
               </div>
             </div>
           )}
@@ -247,7 +243,7 @@ export default function NewFormI({ onBack, nav, editData }) {
           <Card style={{ marginBottom: 12, background: C.saffronLight, border: `1.5px solid ${C.saffron}` }}>
             <p style={{ fontSize: 12, fontWeight: 700, color: C.saffron, marginBottom: 8 }}>📊 Grand Total — Buyer se lena</p>
             <Row label="Kul Raqam (grain)" amount={gross_amount} />
-            <Row label="Mandi Kharche (+)" amount={mpc_amount + auc_amount + labour_amount + damiAmt} />
+            <Row label="Mandi Kharche (+)" amount={mpc_amount + auc_amount + labour_amount} />
             <Divider label="GST on Aadat + AUC" />
             {!isInter ? (
               <>
