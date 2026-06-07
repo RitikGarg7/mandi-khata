@@ -1,66 +1,105 @@
-import { useState, useEffect } from "react";
-import { supabase } from "../lib/supabase";
+import { useState, useEffect, useRef } from "react";
+import { auth, db, RecaptchaVerifier, signInWithPhoneNumber, onAuthStateChanged, signOut } from "../lib/firebase";
 import { encrypt } from "../lib/crypto";
-import { db } from "../lib/supabase";
 import { useApp } from "../context/AppContext";
 import { Shell, C, Btn, Field, Spinner } from "../components/ui";
 
 // Auth flow:
-// New user      → Google Sign-In → set 4-digit PIN → firm details → Home
-// Every day     → Enter PIN → Home  (Google session persists in browser)
-// Forgot PIN    → Google Sign-In again → set new PIN → Home
+// New user   → Enter phone → OTP → set 4-digit PIN → firm details → Home
+// Every day  → Enter PIN → Home  (Firebase session persists in browser)
+// Forgot PIN → Re-verify phone → set new PIN → Home
 
-export default function Login({ onLoggedIn, pendingSession }) {
+export default function Login({ onLoggedIn }) {
   const { unlock, loadAll } = useApp();
-  const [step, setStep] = useState("loading");
-  const [pin, setPin] = useState("");
+
+  const [step, setStep]           = useState("loading"); // loading | phone | otp | pin | confirm_pin | setup
+  const [phone, setPhone]         = useState("");
+  const [otp, setOtp]             = useState("");
+  const [pin, setPin]             = useState("");
   const [confirmPin, setConfirmPin] = useState("");
-  const [isNew, setIsNew] = useState(false);
-  const [authSession, setAuthSession] = useState(null);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [firmName, setFirmName] = useState("");
+  const [isNew, setIsNew]         = useState(false);
+  const [fireUser, setFireUser]   = useState(null);
+  const [confirmResult, setConfirmResult] = useState(null);
+  const [error, setError]         = useState("");
+  const [busy, setBusy]           = useState(false);
+  // Setup fields
+  const [firmName, setFirmName]   = useState("");
   const [mandiName, setMandiName] = useState("");
   const [mandiCity, setMandiCity] = useState("");
-  const [gstin, setGstin] = useState("");
+  const [gstin, setGstin]         = useState("");
 
+  const recaptchaRef = useRef(null);
+  const recaptchaVerifierRef = useRef(null);
+
+  // On mount: check for existing Firebase session
   useEffect(() => {
-    // If redirected back from Google OAuth, pendingSession is set
-    if (pendingSession) {
-      setAuthSession(pendingSession);
-      // Check if this user has settings already (returning user) or is new
-      supabase.from("settings").select("id").maybeSingle().then(({ data }) => {
-        setIsNew(!data);
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setFireUser(user);
+        // Check if new user (no settings doc yet)
+        try {
+          const settings = await db.getSettings();
+          setIsNew(!settings);
+        } catch {
+          setIsNew(true);
+        }
         setStep("pin");
-      });
-      return;
-    }
-    // Check for existing session (user opened app again same day)
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setAuthSession(session);
-        supabase.from("settings").select("id").maybeSingle().then(({ data }) => {
-          setIsNew(!data);
-          setStep("pin");
-        });
       } else {
-        setStep("google"); // No session — need Google sign-in
+        setStep("phone");
       }
     });
-  }, [pendingSession]);
+    return () => unsub();
+  }, []);
 
-  const handleGoogle = async () => {
-    setBusy(true);
-    setError("");
+  // Set up invisible reCAPTCHA when on phone step
+  useEffect(() => {
+    if (step !== "phone") return;
+    // Small delay to ensure div is mounted
+    const t = setTimeout(() => {
+      if (!recaptchaVerifierRef.current && recaptchaRef.current) {
+        recaptchaVerifierRef.current = new RecaptchaVerifier(auth, recaptchaRef.current, {
+          size: "invisible",
+          callback: () => {},
+        });
+      }
+    }, 200);
+    return () => clearTimeout(t);
+  }, [step]);
+
+  const handleSendOtp = async () => {
+    const cleaned = phone.trim().replace(/\s/g, "");
+    if (!cleaned || cleaned.length < 10) { setError("Sahi phone number daalnein."); return; }
+    // Ensure +91 prefix
+    const withCode = cleaned.startsWith("+") ? cleaned : "+91" + cleaned.replace(/^0/, "");
+    setBusy(true); setError("");
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: { redirectTo: window.location.origin },
-      });
-      if (error) throw error;
-      // Page will redirect to Google — no code runs after this
+      const verifier = recaptchaVerifierRef.current;
+      const result = await signInWithPhoneNumber(auth, withCode, verifier);
+      setConfirmResult(result);
+      setStep("otp");
     } catch (e) {
-      setError(e.message);
+      setError(e.message || "OTP bhejne mein dikkat aayi.");
+      // Reset reCAPTCHA on error
+      recaptchaVerifierRef.current?.clear();
+      recaptchaVerifierRef.current = null;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (otp.length !== 6) { setError("6-digit OTP daalnein."); return; }
+    setBusy(true); setError("");
+    try {
+      const result = await confirmResult.confirm(otp);
+      const user = result.user;
+      setFireUser(user);
+      const settings = await db.getSettings().catch(() => null);
+      setIsNew(!settings);
+      setStep("pin");
+    } catch (e) {
+      setError("Galat OTP. Dobara try karein.");
+    } finally {
       setBusy(false);
     }
   };
@@ -68,6 +107,7 @@ export default function Login({ onLoggedIn, pendingSession }) {
   const tapDigit = (d, target) => {
     const current = target === "confirm" ? confirmPin : pin;
     const setter  = target === "confirm" ? setConfirmPin : setPin;
+    if (d === "⌫") { setter(p => p.slice(0, -1)); setError(""); return; }
     const next = current + d;
     if (next.length > 4) return;
     setter(next);
@@ -81,7 +121,7 @@ export default function Login({ onLoggedIn, pendingSession }) {
 
   const handlePinComplete = (p) => {
     if (isNew) setStep("confirm_pin");
-    else doUnlock(authSession, p);
+    else doUnlock(fireUser, p);
   };
 
   const handleConfirmComplete = (p) => {
@@ -93,14 +133,13 @@ export default function Login({ onLoggedIn, pendingSession }) {
     setStep("setup");
   };
 
-  const doUnlock = async (session, p) => {
-    setBusy(true);
-    setError("");
+  const doUnlock = async (user, p) => {
+    setBusy(true); setError("");
     try {
-      const key = await unlock(session, p);
+      const key = await unlock(user, p);
       await loadAll(key);
       onLoggedIn();
-    } catch (e) {
+    } catch {
       setError("Galat PIN. Dobara try karein.");
       setPin("");
     } finally {
@@ -112,7 +151,7 @@ export default function Login({ onLoggedIn, pendingSession }) {
     if (!firmName.trim()) { setError("Firm ka naam zaroori hai."); return; }
     setBusy(true);
     try {
-      const key = await unlock(authSession, pin);
+      const key = await unlock(fireUser, pin);
       const settingsData = {
         firm_name: firmName.trim(),
         gstin: gstin.trim(),
@@ -156,17 +195,20 @@ export default function Login({ onLoggedIn, pendingSession }) {
         style={{ background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "17px 0", fontSize: 22, fontWeight: 600, color: C.ink, fontFamily: "'Baloo 2'" }}>
         0
       </button>
-      <button onClick={() => target === "confirm" ? setConfirmPin(p => p.slice(0,-1)) : setPin(p => p.slice(0,-1))}
+      <button onClick={() => tapDigit("⌫", target)}
         style={{ background: "none", border: "none", fontSize: 20, color: C.inkMid }}>⌫</button>
     </div>
   );
 
   return (
     <Shell>
+      {/* Invisible reCAPTCHA anchor */}
+      <div ref={recaptchaRef} />
+
       <div style={{ background: C.saffron, padding: "52px 28px 36px", textAlign: "center" }}>
         <div style={{ fontSize: 52, marginBottom: 10 }}>🌾</div>
         <h1 style={{ fontFamily: "'Baloo 2'", fontWeight: 800, fontSize: 34, color: C.white, lineHeight: 1.1 }}>Mandi Khata</h1>
-        <p style={{ color: "rgba(255,255,255,0.78)", fontSize: 14, marginTop: 8, fontStyle: "italic" }}>Taraori Anaj Mandi, Karnal</p>
+        <p style={{ color: "rgba(255,255,255,0.78)", fontSize: 14, marginTop: 8, fontStyle: "italic" }}>Arhtiya ka Digital Khata</p>
       </div>
 
       <div style={{ padding: "28px 24px 32px" }}>
@@ -178,22 +220,47 @@ export default function Login({ onLoggedIn, pendingSession }) {
 
         {(busy || step === "loading") && <Spinner />}
 
-        {/* Google sign-in */}
-        {!busy && step === "google" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16, alignItems: "center" }}>
+        {/* Phone number entry */}
+        {!busy && step === "phone" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <p style={{ fontSize: 14, color: C.inkMid, textAlign: "center", lineHeight: 1.6 }}>
-              Apne Google account se login karein.<br />
-              <span style={{ fontSize: 12, color: C.inkLight }}>Roz PIN se khuljega — Google sirf pehli baar.</span>
+              Apna mobile number daalnein.<br />
+              <span style={{ fontSize: 12, color: C.inkLight }}>OTP aayega — sirf pehli baar ya PIN bhool jane par.</span>
             </p>
-            <button onClick={handleGoogle}
-              style={{ display: "flex", alignItems: "center", gap: 12, background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "14px 24px", fontSize: 15, fontWeight: 600, color: C.ink, cursor: "pointer", width: "100%", justifyContent: "center" }}>
-              <svg width="20" height="20" viewBox="0 0 48 48">
-                <path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.5 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.6-.4-3.9z"/>
-                <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19.1 13 24 13c3.1 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.5 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>
-                <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.4 35.5 26.8 36.5 24 36.5c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 40 16.2 44 24 44z"/>
-                <path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.3 5.7l6.2 5.2C37 38.2 44 33 44 24c0-1.3-.1-2.6-.4-3.9z"/>
-              </svg>
-              Google se Login Karein
+            <Field
+              label="Mobile Number"
+              value={phone}
+              onChange={setPhone}
+              type="tel"
+              placeholder="10-digit number (e.g. 98765 43210)"
+              prefix="+91"
+            />
+            <Btn onClick={handleSendOtp} disabled={phone.trim().replace(/\s/g,"").length < 10}>
+              📱 OTP Bhejein
+            </Btn>
+          </div>
+        )}
+
+        {/* OTP verification */}
+        {!busy && step === "otp" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <p style={{ fontSize: 14, color: C.inkMid, textAlign: "center", lineHeight: 1.6 }}>
+              OTP aapke number par bheja gaya hai.<br />
+              <span style={{ fontSize: 12, color: C.inkLight }}>6-digit code daalnein.</span>
+            </p>
+            <Field
+              label="OTP"
+              value={otp}
+              onChange={setOtp}
+              type="number"
+              placeholder="6-digit OTP"
+            />
+            <Btn onClick={handleVerifyOtp} disabled={otp.length !== 6}>
+              ✓ OTP Verify Karein
+            </Btn>
+            <button onClick={() => { setStep("phone"); setOtp(""); setError(""); }}
+              style={{ background: "none", border: "none", color: C.inkLight, fontSize: 12, cursor: "pointer" }}>
+              ← Number badlein / Dobara bhejein
             </button>
           </div>
         )}
@@ -204,16 +271,20 @@ export default function Login({ onLoggedIn, pendingSession }) {
             <p style={{ fontSize: 15, fontWeight: 600, color: C.inkMid, marginBottom: 8 }}>
               {isNew ? "Naya 4-digit PIN chunein" : "PIN daalnein"}
             </p>
-            {!isNew && authSession && (
+            {!isNew && fireUser && (
               <p style={{ fontSize: 12, color: C.inkLight, marginBottom: 16 }}>
-                {authSession.user?.user_metadata?.full_name || authSession.user?.email}
+                {fireUser.phoneNumber}
               </p>
             )}
             <PinDots len={pin.length} />
             <PinPad target="main" />
-            <button onClick={() => { setStep("google"); setPin(""); }}
+            <button onClick={() => {
+              // Force re-auth via OTP to reset PIN
+              signOut(auth);
+              setStep("phone"); setPin(""); setError("");
+            }}
               style={{ marginTop: 20, background: "none", border: "none", color: C.inkLight, fontSize: 12, cursor: "pointer" }}>
-              PIN bhool gaye? Google se login karein →
+              PIN bhool gaye? Phone se verify karein →
             </button>
           </div>
         )}

@@ -1,28 +1,29 @@
 import { createContext, useContext, useState, useCallback } from "react";
-import { supabase } from "../lib/supabase";
+import { auth, db, signOut } from "../lib/firebase";
 import { deriveKey, encrypt, decrypt, decryptRows } from "../lib/crypto";
-import { db } from "../lib/supabase";
 import { computeInterest } from "../lib/interest";
 
 const AppContext = createContext(null);
 
 export function AppProvider({ children }) {
-  const [session, setSession]           = useState(null);
-  const [encKey, setEncKey]             = useState(null);
-  const [settings, setSettings]         = useState(null);
-  const [parties, setParties]           = useState([]);
+  const [session, setSession]             = useState(null);  // Firebase User object
+  const [encKey, setEncKey]               = useState(null);
+  const [settings, setSettings]           = useState(null);
+  const [parties, setParties]             = useState([]);
   const [purchaseBills, setPurchaseBills] = useState([]);
-  const [saleBills, setSaleBills]       = useState([]);
-  const [payments, setPayments]         = useState([]);
-  const [ledger, setLedger]             = useState([]);
-  const [loading, setLoading]           = useState(false);
-  const [error, setError]               = useState(null);
-  const [pinVerifier, setPinVerifier]   = useState(null);
+  const [saleBills, setSaleBills]         = useState([]);
+  const [payments, setPayments]           = useState([]);
+  const [ledger, setLedger]               = useState([]);
+  const [loading, setLoading]             = useState(false);
+  const [error, setError]                 = useState(null);
+  const [pinVerifier, setPinVerifier]     = useState(null);
 
-  const unlock = useCallback(async (supabaseSession, pin) => {
-    const googleId = supabaseSession.user.user_metadata?.sub || supabaseSession.user.id;
-    const key = await deriveKey(googleId, pin);
-    setSession(supabaseSession);
+  // fireUser = Firebase User object (has .uid, .phoneNumber)
+  const unlock = useCallback(async (fireUser, pin) => {
+    // Use UID as stable identity anchor for key derivation
+    const uid = fireUser.uid;
+    const key = await deriveKey(uid, pin);
+    setSession(fireUser);
     setEncKey(key);
     const verifier = await encrypt(key, { v: "MANDI_KHATA_OK" });
     setPinVerifier(verifier);
@@ -64,7 +65,7 @@ export function AppProvider({ children }) {
     return newId;
   }, [encKey]);
 
-  // ── Ledger helpers (must be declared before bill save/update functions) ──────
+  // ── Ledger helpers ────────────────────────────────────────────────────────────
 
   const addLedgerEntry = useCallback(async (entry) => {
     const blob = await encrypt(encKey, entry);
@@ -184,7 +185,7 @@ export function AppProvider({ children }) {
   }, [encKey, settings]);
 
   const logout = useCallback(async () => {
-    await supabase.auth.signOut();
+    await signOut(auth);
     setSession(null); setEncKey(null); setSettings(null);
     setParties([]); setPurchaseBills([]); setSaleBills([]);
     setPayments([]); setLedger([]);
@@ -210,9 +211,8 @@ export function AppProvider({ children }) {
 
   const verifyPin = useCallback(async (enteredPin) => {
     if (!session || !pinVerifier) return false;
-    const googleId = session.user.user_metadata?.sub || session.user.id;
     try {
-      const testKey = await deriveKey(googleId, enteredPin);
+      const testKey = await deriveKey(session.uid, enteredPin);
       const result  = await decrypt(testKey, pinVerifier);
       return result?.v === "MANDI_KHATA_OK";
     } catch {
