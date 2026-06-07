@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { auth, onAuthStateChanged } from "./lib/firebase";
+import { supabase } from "./lib/supabase";
 import { AppProvider, useApp } from "./context/AppContext";
 
 import Login    from "./screens/Login";
@@ -18,20 +18,17 @@ function Router() {
   const [selParty, setSelParty] = useState(null);
   const [editBill, setEditBill] = useState(null);
   const [hist, setHist]         = useState([]);
-  const [authReady, setAuthReady] = useState(false);
+  const [pendingSession, setPendingSession] = useState(null);
 
-  // Firebase persists auth across browser sessions — redirect to PIN if already logged in
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      setAuthReady(true);
-      // Login.jsx handles the auth state internally; we just ensure
-      // screen starts at "login" so Login can check and auto-advance to PIN.
-      if (!user && screen !== "login") {
-        setScreen("login");
-        setHist([]);
-      }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" && session) setPendingSession(session);
+      if (event === "SIGNED_OUT") { setScreen("login"); setHist([]); }
     });
-    return () => unsub();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) setPendingSession(session);
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   const nav = (to, data) => {
@@ -50,7 +47,10 @@ function Router() {
 
   if (screen === "login") {
     return (
-      <Login onLoggedIn={() => { setHist([]); setScreen("home"); }} />
+      <Login
+        pendingSession={pendingSession}
+        onLoggedIn={() => { setHist([]); setScreen("home"); }}
+      />
     );
   }
 
