@@ -93,7 +93,10 @@ Important:
     console.log("=== PARSED FIELDS ===");
     console.log(JSON.stringify(parsed, null, 2));
 
-    // Map Gemini output → our standard field names
+    // Map Gemini output → standard field names used by vision.js and NewFormJ.jsx
+    // kul_kharcha from form col 6 (जोड़ total) → scanned_kul_kharcha
+    // vision.js then maps scanned_kul_kharcha → anya_kharcha in the form
+    // labour/cess/transport stay 0 in scan mode (anya_kharcha covers all deductions)
     const result = {
       bill_number:            parsed.bill_number           || "",
       date:                   formatDate(parsed.date),
@@ -104,6 +107,8 @@ Important:
       buyer_name:             parsed.buyer_name            || "",
       rate:                   String(parsed.rate           || ""),
       gross_amount_from_form: String(parsed.gross_amount   || ""),
+      // kul_kharcha = जोड़ from col 6, read hyphen as decimal (416-48 = 416.48)
+      // Gemini handles this automatically with our prompt instruction
       scanned_kul_kharcha:    String(parsed.kul_kharcha    || "0"),
       net_amount_from_form:   String(parsed.net_amount     || ""),
       confidence:             parsed.confidence            || "medium",
