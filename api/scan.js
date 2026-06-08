@@ -1,7 +1,7 @@
 /**
  * Vercel Serverless Function — /api/scan
  *
- * Uses Gemini 1.5 Flash vision model to read Form J.
+ * Uses Gemini 2.5 Flash Lite to read Form J images.
  * Unlike Google Cloud Vision (pure OCR), Gemini actually understands
  * the form structure and can extract fields by their meaning/position.
  *

@@ -23,7 +23,7 @@
  */
 
 const MAX_WIDTH    = 1400; // px — enough for Gemini to read handwriting clearly
-const JPEG_QUALITY = 0.85; // 85% — good quality for AI vision
+const JPEG_QUALITY = 0.85; // 85% — good quality for Gemini
 
 // Compress image using Canvas API before sending
 // Reduces 5MB phone photo to ~300KB without losing readability
