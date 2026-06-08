@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { supabase } from "./lib/supabase";
+import { auth, onAuthStateChanged } from "./lib/firebase";
 import { AppProvider, useApp } from "./context/AppContext";
 
 import Login    from "./screens/Login";
@@ -14,43 +14,77 @@ import NewFormI from "./screens/NewFormI";
 
 function Router() {
   const { unlock, loadAll } = useApp();
-  const [screen, setScreen]     = useState("login");
+  const [screen, setScreen]   = useState("login");
   const [selParty, setSelParty] = useState(null);
   const [editBill, setEditBill] = useState(null);
   const [hist, setHist]         = useState([]);
-  const [pendingSession, setPendingSession] = useState(null);
 
+  // ── Firebase auth listener ────────────────────────────────────────────────
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_IN" && session) setPendingSession(session);
-      if (event === "SIGNED_OUT") { setScreen("login"); setHist([]); }
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (!user && screen !== "login") {
+        setScreen("login");
+        setHist([]);
+      }
     });
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setPendingSession(session);
-    });
-    return () => subscription.unsubscribe();
+    return () => unsub();
   }, []);
 
+  // ── Intercept iOS swipe-back & Android hardware back ─────────────────────
+  // Every time we navigate forward we push a dummy history entry.
+  // When the user swipes back the browser fires "popstate" — we catch it,
+  // call our own back(), and immediately push another dummy entry so the
+  // browser never actually leaves the page.
+  useEffect(() => {
+    // Push an initial entry so there's always something to pop
+    window.history.pushState({ page: "app" }, "");
+
+    const handlePopState = () => {
+      // Re-push so next swipe-back is also intercepted
+      window.history.pushState({ page: "app" }, "");
+      // Trigger our in-app back navigation
+      setHist(h => {
+        if (h.length === 0) return h; // already at root, do nothing
+        const prev = h[h.length - 1];
+        setEditBill(null);
+        setScreen(prev);
+        return h.slice(0, -1);
+      });
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  // ── Navigation helpers ────────────────────────────────────────────────────
   const nav = (to, data) => {
     setHist(h => [...h, screen]);
     if (to === "khata" && data) setSelParty(data);
     setEditBill((to === "newI" || to === "newJ") ? (data || null) : null);
     setScreen(to);
+    // Push a browser history entry so swipe-back has something to pop
+    window.history.pushState({ page: to }, "");
   };
 
   const back = () => {
-    const prev = hist[hist.length - 1] || "home";
-    setHist(h => h.slice(0, -1));
-    setEditBill(null);
-    setScreen(prev);
+    setHist(h => {
+      const prev = h[h.length - 1] || "home";
+      setEditBill(null);
+      setScreen(prev);
+      return h.slice(0, -1);
+    });
+    // Let the popstate handler re-push; or push ourselves if called via button
+    window.history.pushState({ page: "app" }, "");
   };
 
+  // ── Render ────────────────────────────────────────────────────────────────
   if (screen === "login") {
     return (
-      <Login
-        pendingSession={pendingSession}
-        onLoggedIn={() => { setHist([]); setScreen("home"); }}
-      />
+      <Login onLoggedIn={() => {
+        setHist([]);
+        setScreen("home");
+        window.history.pushState({ page: "home" }, "");
+      }} />
     );
   }
 
