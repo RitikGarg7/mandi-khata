@@ -127,6 +127,9 @@ export default function NewFormJ({ onBack, nav, editData }) {
         anya_kharcha: result.scanned_kul_kharcha !== "0"
           ? result.scanned_kul_kharcha
           : prev.anya_kharcha,
+        // Clear labour_rate when scan provides kul_kharcha
+        // so utarai = 0 and doesn't double-count with anya_kharcha
+        labour_rate: result.scanned_kul_kharcha !== "0" ? "0" : prev.labour_rate,
 
         // Notes: always empty after scan (per client decision)
         // notes: ""  ← not stored in state, not shown
