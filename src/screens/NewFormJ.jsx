@@ -124,12 +124,13 @@ export default function NewFormJ({ onBack, nav, editData }) {
         // Do NOT populate labour_rate/cess/transport — leave them as default/0.
         // Put the entire "जोड़" (kul kharcha from column 6) into anya_kharcha.
         // Formula: net = gross - 0(labour) - 0(cess) - 0(transport) - anya_kharcha
-        anya_kharcha: result.scanned_kul_kharcha !== "0"
-          ? result.scanned_kul_kharcha
+        // anya_kharcha = जोड़ from form col 6 (e.g. 416.48)
+        // vision.js maps scanned_kul_kharcha → anya_kharcha before returning
+        anya_kharcha: result.anya_kharcha && result.anya_kharcha !== "0"
+          ? result.anya_kharcha
           : prev.anya_kharcha,
-        // Clear labour_rate when scan provides kul_kharcha
-        // so utarai = 0 and doesn't double-count with anya_kharcha
-        labour_rate: result.scanned_kul_kharcha !== "0" ? "0" : prev.labour_rate,
+        // Clear labour_rate so utarai = 0 (anya_kharcha covers all deductions in scan mode)
+        labour_rate: result.anya_kharcha && result.anya_kharcha !== "0" ? "0" : prev.labour_rate,
 
         // Notes: always empty after scan (per client decision)
         // notes: ""  ← not stored in state, not shown
@@ -203,7 +204,7 @@ export default function NewFormJ({ onBack, nav, editData }) {
   const bags          = parseFloat(f.bags)          || 0;
   const weight        = parseFloat(f.weight)         || 0;
   const rate          = parseFloat(f.rate)           || 0;
-  const labRate       = parseFloat(f.labour_rate)    || 5.32;
+  const labRate       = f.labour_rate === "" ? 5.32 : (parseFloat(f.labour_rate) || 0);
   const cessAmt       = parseFloat(f.cess)           || 0;
   const transportAmt  = parseFloat(f.transport)      || 0;
   const anyaKharcha   = parseFloat(f.anya_kharcha)   || 0;
