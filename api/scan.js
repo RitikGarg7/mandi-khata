@@ -1,13 +1,6 @@
 /**
  * Vercel Serverless Function — /api/scan
- *
- * FLOW:
- *   Browser → POST /api/scan { imageBase64, mimeType }
- *     → Google Cloud Vision DOCUMENT_TEXT_DETECTION
- *     → parseFormJ() extracts fields from raw OCR text
- *     → Return { success, data, rawText }
- *
- * ENV: GOOGLE_CLOUD_VISION_API_KEY (Vercel dashboard, no VITE_ prefix)
+ * ENV: GOOGLE_CLOUD_VISION_API_KEY
  */
 
 export default async function handler(req, res) {
@@ -53,7 +46,6 @@ export default async function handler(req, res) {
 
     console.log("=== PARSED FIELDS ===");
     console.log(JSON.stringify(parsed, null, 2));
-    console.log("=== END PARSED ===");
 
     return res.status(200).json({ success: true, data: parsed, rawText: fullText });
 
@@ -65,98 +57,124 @@ export default async function handler(req, res) {
 // ─────────────────────────────────────────────────────────────────────────────
 // parseFormJ(text)
 //
-// FORM J LAYOUT (physical form columns, left to right):
-//   Col 1: जिंस का नाम + bags×weight (e.g. "faddy\n76×50")
-//   Col 2: खरीददार का नाम (buyer, e.g. "BCPL")
-//   Col 3: वजन (weight, e.g. "38" or "50")
-//   Col 4: भाव (rate per quintal, e.g. "3955")
-//   Col 5: रकम (gross amount, e.g. "150290")
-//   Col 6: कुल खर्च (उतराई/झराई/किराया/अन्य + जोड़ total, e.g. "416.48")
-//   Col 7: रकम साफी जो दी गई (net amount, e.g. "149873.52")
+// FORM J COLUMNS (physical form, left to right):
+//   Col 1: जिंस का नाम + bags×weight  e.g. "faddy\n76×50"
+//   Col 2: खरीददार का नाम (buyer)     e.g. "BCPL"
+//   Col 3: वजन (weight quintals)      e.g. "38" (written as "38-oo" = 38.00)
+//   Col 4: भाव (rate/quintal)         e.g. "3955"  ← 4 digits
+//   Col 5: रकम (gross amount)         e.g. "150290" ← 5-6 digits
+//   Col 6: कुल खर्च breakdown + जोड़   e.g. उतराई "416-48", जोड़ "416-48"
+//   Col 7: रकम साफी जो दी गई (net)   e.g. "149873-52"
 //
-// Header (outside table):
-//   बेचने वाले का नाम → seller/farmer name (Hindi handwriting)
-//   निलामी की तिथि   → auction date (e.g. "3-12-24")
-//   क्रमांक           → bill number (e.g. "04")
+// HEADER (outside table):
+//   बेचने वाले का नाम → farmer name (Hindi, line AFTER label)
+//   निलामी की तिथि   → date top-right corner e.g. "3-12-24"
+//   क्रमांक           → bill number e.g. "04"
 //
-// OCR KNOWN ISSUES observed from real scans:
-//   1. Dotted lines OCR as "●" or "..." — need to filter these out
-//   2. Date: "3-12-24" may OCR as "अ2-24" (Devanagari digit confusion)
-//   3. Hyphen in amounts: "416-48" means 416.48 (decimal written as hyphen)
-//   4. Numbers merge: "3955" + "150290" may read as "3839557" or similar
-//   5. Seller name appears on line AFTER the "बेचने वाले का नाम" label
-//   6. Rate (भाव) is 3-4 digits (₹1000-9999), never 5+ digits
+// KEY OCR OBSERVATIONS from actual scans:
+//   1. ALL table column values merge into ONE line:
+//      "3839557/15029०:०० उतराई116-48 149873-52-"
+//      This means rate+gross+kharcha+net all run together
+//   2. Date "3-12-24" reads as "अ2-24" (Devanagari replaces "3-1")
+//      → Solution: look for date pattern RIGHT OF "तिथि" keyword specifically
+//   3. Hyphens in amounts mean decimals: "416-48" = 416.48, "149873-52" = 149873.52
+//   4. "जोड़" line: "जोड़ 41-48" has OCR dropping digits → "416-48" becomes "41-48"
+//      → Solution: calculate kharcha = gross - net (more reliable than reading जोड़)
+//   5. Buyer name "BCPL" appears in the merged data line, not after खरीददार keyword
+//   6. Seller name is on line AFTER "बेचने वाले का नाम" label
 //
-// DEDUCTION APPROACH:
-//   SCAN:   anya_kharcha = जोड़ total; labour/cess/transport = 0
+// DEDUCTION APPROACH (agreed with client):
+//   SCAN: anya_kharcha = जोड़ total (calculated as gross-net if OCR fails)
+//         labour/cess/transport = 0
 //   MANUAL: user fills labour/cess/transport; anya_kharcha = 0
 // ─────────────────────────────────────────────────────────────────────────────
 function parseFormJ(text) {
   const lines  = text.split("\n").map(l => l.trim()).filter(Boolean);
   const joined = lines.join(" ");
 
-  // ── HELPER: normalize a string of digits ────────────────────────────────
-  // Converts "416-48" → "416.48", removes commas
-  const normNum = (s) => s.replace(/,/g, "").replace(/(\d)[.\-](\d)/g, "$1.$2");
+  // ── HELPER: normalize number string ───────────────────────────────────────
+  // Converts "416-48" → "416.48", "149873-52" → "149873.52", removes commas
+  // Rule: hyphen between digits = decimal point (Indian handwriting convention)
+  const normNum = (s) => String(s).replace(/,/g, "").replace(/(\d)[.\-](\d{2})(?!\d)/g, "$1.$2");
 
-  // Extract first valid number from a string
+  // Extract first number from normalized string
   const firstNum = (s) => {
     const m = normNum(s).match(/\d+(?:\.\d+)?/);
     return m ? m[0] : "";
   };
 
   // ── BILL NUMBER (क्रमांक) ────────────────────────────────────────────────
-  // Small serial number (1-3 digits) near "क्रमांक" keyword
   let bill_number = "";
-  const billM = joined.match(/(?:क्रमांक|ARAOR क्रमांक|Kramank)[^\d]*0*(\d{1,3})/);
+  const billM = joined.match(/(?:क्रमांक|ARAOR\s*क्रमांक)[^\d]*0*(\d{1,3})/);
   if (billM) {
     bill_number = billM[1];
   } else {
-    // Fallback: standalone 2-digit number in first 10 lines
-    for (const l of lines.slice(0, 10)) {
+    for (const l of lines.slice(0, 12)) {
       const m = l.match(/^\s*0*(\d{1,2})\s*$/);
       if (m) { bill_number = m[1]; break; }
     }
   }
 
-  // ── DATE (निलामी की तिथि) ─────────────────────────────────────────────────
-  // Format: D-M-YY e.g. "3-12-24"
-  // OCR issue: "3-12-24" may become "अ2-24" (Devanagari replaces digits)
-  // Strategy: look for any D-M-YY or D-M-YYYY pattern in full text
+  // ── DATE (निलामी की तिथि) — TOP RIGHT corner of form ─────────────────────
+  // Written as "3-12-24" (D-M-YY). OCR issue: "3-12-24" → "अ2-24"
+  // because the form has Devanagari text nearby and OCR confuses "3-1" with "अ".
+  //
+  // STRATEGY: Search the raw text for date-like patterns with these rules:
+  //   - Must have 3 parts separated by - or /
+  //   - Day: 1-31, Month: 1-12, Year: 2 or 4 digits
+  //   - Prefer pattern that appears AFTER "तिथि" keyword
   let date = "";
 
-  // Find all date-like patterns: 1-2 digit / 1-2 digit / 2-4 digit
-  const dateMatches = joined.match(/\d{1,2}[.\-\/]\d{1,2}[.\-\/]\d{2,4}/g) || [];
-  for (const dm of dateMatches) {
-    const parts = dm.split(/[.\-\/]/);
-    if (parts.length === 3) {
-      let [d, mo, y] = parts;
-      // Validate: day 1-31, month 1-12, year 2-digit or 4-digit
+  // First: look specifically near "तिथि" keyword (right side of header)
+  const titheIdx = joined.search(/तिथि/);
+  if (titheIdx !== -1) {
+    // Look in 40 chars after तिथि
+    const window = joined.slice(titheIdx, titheIdx + 40);
+    const m = window.match(/(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{2,4})/);
+    if (m) {
+      let [, d, mo, y] = m;
       if (parseInt(d) <= 31 && parseInt(mo) <= 12) {
         if (y.length === 2) y = "20" + y;
         date = `${y}-${mo.padStart(2,"0")}-${d.padStart(2,"0")}`;
-        break;
+      }
+    }
+  }
+
+  // Second: scan ALL lines for date pattern (handles OCR confusion)
+  // We try each line individually since date may be on its own line
+  if (!date) {
+    for (const line of lines) {
+      const m = line.match(/(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{2,4})/);
+      if (m) {
+        let [, d, mo, y] = m;
+        if (parseInt(d) <= 31 && parseInt(mo) <= 12 && parseInt(mo) >= 1) {
+          if (y.length === 2) y = "20" + y;
+          date = `${y}-${mo.padStart(2,"0")}-${d.padStart(2,"0")}`;
+          break;
+        }
       }
     }
   }
 
   // ── SELLER NAME (बेचने वाले का नाम) ──────────────────────────────────────
-  // The farmer's name appears on the line AFTER the label "बेचने वाले का नाम"
-  // OCR often adds "●" (bullet) from dotted lines — we filter these
+  // Appears on line AFTER the label. Hindi handwriting, OCR quality varies.
+  // Filter out: bullets (●), dots from dotted lines, section keywords
   let seller_name = "";
+  const SKIP_WORDS = /निलामी|तिथि|क्रमांक|जिंस|खरीददार|वजन|भाव|रकम|बेचने|FORM|मार्किट/;
 
-  // Find the label line, then look at next 1-2 lines for the actual name
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].includes("बेचने वाले का नाम") || lines[i].includes("बेचने वाले")) {
-      // Check next 3 lines for a Hindi name (not a keyword or number)
+      // Look at next 3 lines for actual name
       for (let j = i + 1; j <= i + 3 && j < lines.length; j++) {
-        const candidate = lines[j]
-          .replace(/●|•|\.|निलामी|तिथि|क्रमांक|जिंस|खरीददार/g, "")
-          .replace(/का नाम/g, "")
+        const raw = lines[j]
+          .replace(/[●•]+/g, "")        // remove bullets from dotted lines
+          .replace(/\.{2,}/g, "")        // remove repeated dots
+          .replace(/का नाम/g, "")        // remove label fragments
           .trim();
-        // Valid name: has Hindi characters, length > 2, not just dots/numbers
-        if (candidate.length > 2 && /[\u0900-\u097F]/.test(candidate)) {
-          seller_name = candidate.slice(0, 50);
+
+        // Valid: contains Hindi chars, reasonable length, not a section keyword
+        if (raw.length > 2 && /[\u0900-\u097F]/.test(raw) && !SKIP_WORDS.test(raw)) {
+          seller_name = raw.slice(0, 50);
           break;
         }
       }
@@ -164,42 +182,22 @@ function parseFormJ(text) {
     }
   }
 
-  // Fallback: look for line with Hindi text after the ● bullet (which marks the dotted line)
-  if (!seller_name) {
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].includes("●") || lines[i].includes("•")) {
-        // The next non-trivial Hindi line is likely the name
-        for (let j = i + 1; j <= i + 2 && j < lines.length; j++) {
-          const candidate = lines[j].replace(/[●•\.]/g, "").trim();
-          if (candidate.length > 2 && /[\u0900-\u097F]/.test(candidate)
-              && !candidate.includes("निलामी") && !candidate.includes("तिथि")) {
-            seller_name = candidate.slice(0, 50);
-            break;
-          }
-        }
-        if (seller_name) break;
-      }
-    }
-  }
-
   // ── COMMODITY (जिंस का नाम) ──────────────────────────────────────────────
-  // Default Wheat — Taraori mandi is predominantly wheat
-  // Note: OCR may read "faddy" for "paddy" — handle this
+  // Default Wheat. OCR may read "paddy" as "faddy" — handled below.
   let commodity = "Wheat";
   const commodityMap = [
-    { re: /गेह[ूु]ं?|[Ww]heat/,         val: "Wheat"   },
-    { re: /सरसों?|[Mm]ustard/,           val: "Mustard" },
-    { re: /धान|[Pp]addy|[Ff]addy|[Rr]ice/, val: "Paddy" },
-    { re: /बाजरा|[Bb]ajra/,              val: "Bajra"   },
-    { re: /मक्का|[Mm]aize|[Cc]orn/,      val: "Maize"   },
+    { re: /गेह[ूु]ं?|[Ww]heat/,               val: "Wheat"   },
+    { re: /सरसों?|[Mm]ustard/,                 val: "Mustard" },
+    { re: /धान|[Pp]addy|[Ff]addy|[Rr]ice/,    val: "Paddy"   },
+    { re: /बाजरा|[Bb]ajra/,                    val: "Bajra"   },
+    { re: /मक्का|[Mm]aize|[Cc]orn/,            val: "Maize"   },
   ];
   for (const { re, val } of commodityMap) {
     if (re.test(joined)) { commodity = val; break; }
   }
 
   // ── BAGS × WEIGHT ─────────────────────────────────────────────────────────
-  // Written as "76×50" or "76x50" in col 1
-  // bags = number of bags, weight = total quintals
+  // Written as "76×50" or "76x50". Bags = count, weight = quintals total.
   let bags = "", weight = "";
   const bwMatch = joined.match(/(\d+)\s*[×xX✕]\s*(\d+(?:\.\d+)?)/);
   if (bwMatch) {
@@ -208,95 +206,135 @@ function parseFormJ(text) {
   }
 
   // ── BUYER NAME (खरीददार का नाम) ──────────────────────────────────────────
+  // Often appears in the merged data line rather than after the keyword.
+  // Common buyers: BCPL, company names in English
   let buyer_name = "";
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].includes("खरीददार का नाम") || lines[i].includes("खरीददार")) {
-      // Check same line after keyword
-      const same = lines[i].replace(/खरीददार का नाम|खरीददार/, "").trim();
-      if (same.length > 1 && !/^[\s\-:]+$/.test(same)) {
-        buyer_name = same.slice(0, 40); break;
-      }
-      // Check next line
-      if (lines[i + 1]) {
-        buyer_name = lines[i + 1].trim().slice(0, 40); break;
+
+  // Look for known buyer patterns in full text
+  const bcplMatch = joined.match(/\bBCPL\b/i);
+  if (bcplMatch) buyer_name = "BCPL";
+
+  if (!buyer_name) {
+    // Try after keyword
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes("खरीददार का नाम") || lines[i].includes("खरीददार")) {
+        const same = lines[i].replace(/खरीददार का नाम|खरीददार/, "").trim();
+        if (same.length > 1) { buyer_name = same.slice(0, 40); break; }
+        if (lines[i+1] && !/^[\u0900-\u097F\s]+$/.test(lines[i+1])) {
+          buyer_name = lines[i+1].trim().slice(0, 40); break;
+        }
       }
     }
-  }
-  // Fallback: BCPL / company names often appear near "76×50" pattern
-  if (!buyer_name) {
-    const bcplMatch = joined.match(/BCPL|bcpl|Bcpl/);
-    if (bcplMatch) buyer_name = "BCPL";
   }
 
-  // ── RATE / BHAV (भाव) — 4th column ───────────────────────────────────────
-  // Rate per quintal: 3-4 digit number in range ₹1000-9999
+  // ── RATE / BHAV — 4th column, ₹1000-9999 ────────────────────────────────
+  // CORE ISSUE: All column values merge into one line in OCR output.
+  // e.g. "3839557/15029०:०० उतराई116-48 149873-52-"
+  // The real values are: rate=3955, gross=150290, utarai=416.48, net=149873.52
   //
-  // KEY OCR ISSUE: Numbers from adjacent columns merge together.
-  // e.g. "3955" (rate) + "150290" (gross) may read as "3839557" or "395150290"
-  //
-  // STRATEGY: Find भाव keyword, then extract ONLY 4-digit numbers in valid range.
-  // We specifically reject 5+ digit numbers (those are amounts, not rates).
+  // STRATEGY: We know bags and weight. Calculate expected gross = weight × rate.
+  // Then scan for a 4-digit number where weight × number ≈ any 5-6 digit number nearby.
+  // This cross-references rate against gross to find the correct pair.
   let rate = "";
-  const bhavIdx = joined.search(/भाव/);
-  if (bhavIdx !== -1) {
-    // Look at a window of 80 chars after भाव
-    const window = normNum(joined.slice(bhavIdx + 2, bhavIdx + 80));
-    // Extract all standalone 3-4 digit numbers (word boundary aware)
-    const candidates = window.match(/(?<!\d)\d{4}(?!\d)/g) || [];
-    for (const c of candidates) {
-      const val = parseInt(c);
-      if (val >= 1000 && val <= 9999) { rate = c; break; }
-    }
-    // Also try 3-digit rates (some cheaper commodities)
-    if (!rate) {
-      const c3 = window.match(/(?<!\d)\d{3}(?!\d)/g) || [];
-      for (const c of c3) {
-        const val = parseInt(c);
-        if (val >= 500) { rate = c; break; }
+
+  // Extract all 4-digit numbers from the text (candidate rates)
+  const allFourDigit = (joined.match(/(?<!\d)\d{4}(?!\d)/g) || []).map(Number)
+    .filter(n => n >= 1000 && n <= 9999);
+
+  // Extract all 5-7 digit numbers (candidate gross amounts)
+  const allLarge = (normNum(joined).match(/(?<!\d)\d{5,7}(?:\.\d+)?(?!\d)/g) || []).map(Number);
+
+  // Try to find rate+gross pair where weight × rate ≈ gross (within 2%)
+  if (weight && allFourDigit.length > 0 && allLarge.length > 0) {
+    const w = parseFloat(weight);
+    let bestRate = null, bestDiff = Infinity;
+    for (const r of allFourDigit) {
+      const expectedGross = w * r;
+      for (const g of allLarge) {
+        const diff = Math.abs(g - expectedGross) / expectedGross;
+        if (diff < 0.02 && diff < bestDiff) {
+          bestRate = r; bestDiff = diff;
+        }
       }
+    }
+    if (bestRate) rate = String(bestRate);
+  }
+
+  // Fallback: look for 4-digit number after भाव keyword
+  if (!rate) {
+    const bhavIdx = joined.search(/भाव/);
+    if (bhavIdx !== -1) {
+      const window = joined.slice(bhavIdx, bhavIdx + 60);
+      const m = window.match(/(?<!\d)([1-9]\d{3})(?!\d)/);
+      if (m) rate = m[1];
     }
   }
 
   // ── GROSS AMOUNT (रकम) — 5th column ──────────────────────────────────────
-  // Gross = weight × rate. Typically 5-6 digit number e.g. 150290
-  // Used for cross-validation: if our calculated gross differs >1% from this → warn
-  //
-  // OCR ISSUE: This column's numbers often merge with rate column.
-  // We look for the largest clean 5-6 digit number that makes sense as gross.
+  // Calculated as weight × rate (more reliable than reading from OCR).
+  // Also try to find from OCR for cross-validation.
   let gross_amount_from_form = "";
   if (weight && rate) {
-    const expectedGross = parseFloat(weight) * parseFloat(rate);
-    // Search for a number within 5% of expected gross
-    const allNums = (normNum(joined).match(/\d{5,7}(?:\.\d+)?/g) || []).map(Number);
-    let bestMatch = null, bestDiff = Infinity;
-    for (const n of allNums) {
-      const diff = Math.abs(n - expectedGross) / expectedGross;
-      if (diff < 0.05 && diff < bestDiff) { bestMatch = n; bestDiff = diff; }
-    }
-    if (bestMatch) gross_amount_from_form = String(bestMatch);
+    // Use calculated value as primary (OCR merged-line issue makes reading unreliable)
+    gross_amount_from_form = String(Math.round(parseFloat(weight) * parseFloat(rate)));
   }
 
   // ── KUL KHARCHA / जोड़ ────────────────────────────────────────────────────
-  // Total deductions from col 6. Written as "जोड़ 416-48" (hyphen = decimal).
+  // TOTAL deductions from col 6 (उतराई + झराई + किराया + अन्य).
+  // Goes into anya_kharcha field. Labour/cess/transport stay 0 in scan mode.
   //
-  // DESIGN DECISION: We take जोड़ total → anya_kharcha field.
-  // labour/cess/transport stay 0 in scan mode.
-  // Net = gross - anya_kharcha (see NewFormJ.jsx)
+  // OCR ISSUES:
+  //   - "416-48" (hyphen = decimal) → "41-48" (digit dropped)
+  //   - "जोड़ 416-48" → "जोड़ 41-48" (OCR misses '6')
+  //
+  // MOST RELIABLE APPROACH:
+  //   Calculate kharcha = gross_amount - net_amount (from form's last column)
+  //   This avoids reading the जोड़ line directly.
   let scanned_kul_kharcha = "0";
+  let net_amount_from_form = "";
 
-  // Look for जोड़ keyword
-  const jodIdx = joined.search(/जोड़/);
-  if (jodIdx !== -1) {
-    const window = normNum(joined.slice(jodIdx, jodIdx + 40));
-    // Match decimal number like "416.48" or integer like "416"
-    const m = window.match(/\d{2,5}(?:\.\d{1,2})?/g) || [];
-    // Take the first valid kharcha amount (usually 3-5 digits before decimal)
-    for (const n of m) {
-      if (parseFloat(n) > 10) { scanned_kul_kharcha = n; break; }
+  // Step 1: Try to read net amount (रकम साफी) from OCR
+  // It appears as "149873-52" in the last column — normalize hyphen to decimal
+  const safiIdx = joined.search(/साफी|रकम साफी/);
+  if (safiIdx !== -1) {
+    const window = normNum(joined.slice(safiIdx, safiIdx + 80));
+    const nums = (window.match(/\d{5,7}(?:\.\d{1,2})?/g) || []).map(Number);
+    if (nums.length > 0) net_amount_from_form = String(Math.max(...nums));
+  }
+
+  // Also scan all lines for 6-digit number with decimal (likely net amount)
+  if (!net_amount_from_form) {
+    for (const line of lines) {
+      const normalized = normNum(line);
+      const m = normalized.match(/(\d{5,6}\.\d{2})/);
+      if (m) { net_amount_from_form = m[1]; break; }
     }
   }
 
-  // Fallback: उतराई amount (equals जोड़ when झराई/किराया are blank)
+  // Step 2: Calculate kharcha = gross - net (MOST RELIABLE)
+  if (gross_amount_from_form && net_amount_from_form) {
+    const gross = parseFloat(gross_amount_from_form);
+    const net   = parseFloat(net_amount_from_form);
+    const kharcha = gross - net;
+    if (kharcha > 0 && kharcha < gross * 0.1) {
+      // Sanity check: kharcha should be < 10% of gross
+      scanned_kul_kharcha = kharcha.toFixed(2);
+    }
+  }
+
+  // Step 3: Fallback — try reading जोड़ directly from OCR
+  if (scanned_kul_kharcha === "0") {
+    const jodIdx = joined.search(/जोड़/);
+    if (jodIdx !== -1) {
+      const window = normNum(joined.slice(jodIdx, jodIdx + 40));
+      const m = window.match(/\d{2,5}(?:\.\d{1,2})?/g) || [];
+      for (const n of m) {
+        if (parseFloat(n) > 10) { scanned_kul_kharcha = n; break; }
+      }
+    }
+  }
+
+  // Step 4: Fallback — try reading उतराई directly
   if (scanned_kul_kharcha === "0") {
     const utIdx = joined.search(/उतराई/);
     if (utIdx !== -1) {
@@ -306,16 +344,6 @@ function parseFormJ(text) {
         if (parseFloat(n) > 10) { scanned_kul_kharcha = n; break; }
       }
     }
-  }
-
-  // ── NET AMOUNT (रकम साफी जो दी गई) — 7th column ─────────────────────────
-  // Used for cross-validation. Format: "149873-52" → 149873.52
-  let net_amount_from_form = "";
-  const safiIdx = joined.search(/साफी|रकम साफी/);
-  if (safiIdx !== -1) {
-    const window = normNum(joined.slice(safiIdx, safiIdx + 60));
-    const nums = (window.match(/\d{5,7}(?:\.\d+)?/g) || []).map(Number);
-    if (nums.length > 0) net_amount_from_form = String(Math.max(...nums));
   }
 
   // ── CONFIDENCE SCORING ────────────────────────────────────────────────────
