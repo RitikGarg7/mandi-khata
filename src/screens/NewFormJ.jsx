@@ -53,9 +53,9 @@ export default function NewFormJ({ onBack, nav, editData }) {
   const applyResult = (data) => {
     setF(prev => ({
       ...prev,
-      // Date: only update if scan/voice found a valid YYYY-MM-DD date
-      date: (data.date && data.date.length === 10 && data.date.includes('-'))
-        ? data.date : prev.date,
+      // Date: parse whatever format Gemini returns → YYYY-MM-DD
+      // Handles: "2024-12-03", "3-12-2024", "3/12/2024", "3 12 2024"
+      date: parseDate(data.date) || prev.date,
       commodity:    data.commodity || prev.commodity,
       bags:         data.bags      || prev.bags,
       weight:       data.weight    || prev.weight,
@@ -556,4 +556,41 @@ export default function NewFormJ({ onBack, nav, editData }) {
 
 function today() {
   return new Date().toISOString().split("T")[0];
+}
+
+// parseDate: converts any date format Gemini might return → YYYY-MM-DD
+// Handles: "2024-12-03", "3-12-2024", "3/12/2024", "3 12 2024", "03-12-24"
+function parseDate(raw) {
+  if (!raw || typeof raw !== "string") return "";
+  raw = raw.trim();
+
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+
+  // Split by any separator: -, /, space
+  const parts = raw.split(/[-\/\s]+/).map(p => p.trim()).filter(Boolean);
+  if (parts.length !== 3) return "";
+
+  let [a, b, c] = parts;
+
+  // Determine which is year (4 digits or 2 digits > 20)
+  let d, m, y;
+  if (c.length === 4 || (c.length === 2 && parseInt(c) > 20)) {
+    // Format: D-M-YYYY or D-M-YY
+    d = a; m = b; y = c;
+  } else if (a.length === 4) {
+    // Format: YYYY-M-D
+    y = a; m = b; d = c;
+  } else {
+    // Assume D-M-YY
+    d = a; m = b; y = c;
+  }
+
+  if (y.length === 2) y = "20" + y;
+
+  const dd = parseInt(d), mm = parseInt(m), yy = parseInt(y);
+  if (isNaN(dd) || isNaN(mm) || isNaN(yy)) return "";
+  if (dd < 1 || dd > 31 || mm < 1 || mm > 12) return "";
+
+  return `${yy}-${String(mm).padStart(2,"0")}-${String(dd).padStart(2,"0")}`;
 }
