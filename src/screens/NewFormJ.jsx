@@ -53,7 +53,9 @@ export default function NewFormJ({ onBack, nav, editData }) {
   const applyResult = (data) => {
     setF(prev => ({
       ...prev,
-      date:         data.date      || prev.date,
+      // Date: only update if scan/voice found a valid YYYY-MM-DD date
+      date: (data.date && data.date.length === 10 && data.date.includes('-'))
+        ? data.date : prev.date,
       commodity:    data.commodity || prev.commodity,
       bags:         data.bags      || prev.bags,
       weight:       data.weight    || prev.weight,
@@ -85,7 +87,8 @@ export default function NewFormJ({ onBack, nav, editData }) {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
-    setScanning(true); setError(""); setScanResult(null); setNewKisanName(""); setTranscription("");
+    setScanning(true); setError(""); setScanResult(null); setNewKisanName("");
+    // Keep transcription visible so user can see previous voice inputs
     try {
       const result = await scanFormJ(file);
       applyResult(result);
@@ -99,7 +102,8 @@ export default function NewFormJ({ onBack, nav, editData }) {
   // ── Voice handlers ─────────────────────────────────────────────────────────────
   const handleVoiceStart = async () => {
     try {
-      setError(""); setTranscription(""); setScanResult(null); setNewKisanName("");
+      // Don't clear previous scan result or kisan box — user may be adding more fields
+      setError(""); setTranscription("");
       const rec = createRecorder();
       setRecorder(rec);
       await rec.start();
@@ -115,7 +119,10 @@ export default function NewFormJ({ onBack, nav, editData }) {
     setScanning(true);
     try {
       const result = await recorder.stop();
-      setTranscription(result.transcription || "");
+      // Accumulate transcriptions so user can see all spoken inputs
+      setTranscription(prev =>
+        prev ? prev + " | " + (result.transcription || "") : (result.transcription || "")
+      );
       applyResult(result.data);
     } catch (e) {
       setError("Samajh nahi aaya: " + (e.message || "Dobara bolein"));

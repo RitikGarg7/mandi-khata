@@ -61,6 +61,7 @@ Notes:
 - "hazar" = thousand, "sau" = hundred, "pachas" = 50, "pachhattar" = 75
 - "bori" or "boriya" = bags, "quintal" or "maan" = weight unit
 - "bhav" or "rate" = price per quintal
+- DATE: if user mentions a date like "teen december" or "3-12" convert to YYYY-MM-DD format e.g. "2024-12-03". Always use current year if year not mentioned (2024).
 - If a field is not mentioned, return "" for text fields and "0" for number fields
 - Return ONLY the JSON`;
 
