@@ -36,11 +36,29 @@ export function buildLedgerWithRunningBalance(party, ledger) {
     .filter(e => e.party_id === party.id)
     .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
 
+  // Add opening balance as the first entry if it exists
+  const openingEntry = (party.opening_balance && party.opening_balance !== 0)
+    ? [{
+        id:             "__opening__",
+        party_id:       party.id,
+        date:           party.opening_balance_date || party.created_at?.substring(0, 10) || "",
+        narration:      "Opening Balance (Loan diya)",
+        debit:          party.opening_balance > 0 ? party.opening_balance : 0,
+        credit:         party.opening_balance < 0 ? Math.abs(party.opening_balance) : 0,
+        source_type:    "opening",
+        running_balance: party.opening_balance,
+      }]
+    : [];
+
   let running = party.opening_balance || 0;
-  return partyLedger.map(e => {
+  const entries = partyLedger.map(e => {
     running += (e.debit || 0) - (e.credit || 0);
     return { ...e, running_balance: running };
   });
+
+  // Combine and re-sort by date so opening entry sits in correct position
+  return [...openingEntry, ...entries]
+    .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
 }
 
 /**

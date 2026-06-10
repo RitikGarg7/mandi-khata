@@ -211,23 +211,32 @@ export default function Khata({ party, onBack }) {
               ))}
             </div>
 
-            {k.ledgerWithBal.map((e, i) => (
-              <div key={e.id} onClick={() => k.setSelEntry(e)}
-                style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px",
-                  padding: "11px 14px", cursor: "pointer", alignItems: "center",
-                  borderBottom: i < k.ledgerWithBal.length - 1 ? `1px solid ${C.border}` : "none" }}>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 500 }}>{e.narration}</div>
-                  <div style={{ fontSize: 10, color: C.inkLight, marginTop: 2 }}>{e.date}</div>
+            {k.ledgerWithBal.map((e, i) => {
+              const isOpening = e.source_type === "opening";
+              return (
+                <div key={e.id}
+                  onClick={() => !isOpening && k.setSelEntry(e)}
+                  style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px",
+                    padding: "11px 14px", alignItems: "center",
+                    cursor: isOpening ? "default" : "pointer",
+                    background: isOpening ? C.goldLight : "transparent",
+                    borderBottom: i < k.ledgerWithBal.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: isOpening ? 700 : 500,
+                      color: isOpening ? C.gold : C.ink }}>
+                      {e.narration}
+                    </div>
+                    <div style={{ fontSize: 10, color: C.inkLight, marginTop: 2 }}>{e.date}</div>
+                  </div>
+                  <div style={{ textAlign: "right", fontFamily: "'Baloo 2'", fontSize: 12, color: C.red }}>
+                    {e.debit > 0 ? `₹${fmt(e.debit)}` : "—"}
+                  </div>
+                  <div style={{ textAlign: "right", fontFamily: "'Baloo 2'", fontSize: 12, color: C.green }}>
+                    {e.credit > 0 ? `₹${fmt(e.credit)}` : "—"}
+                  </div>
                 </div>
-                <div style={{ textAlign: "right", fontFamily: "'Baloo 2'", fontSize: 12, color: C.red }}>
-                  {e.debit > 0 ? `₹${fmt(e.debit)}` : "—"}
-                </div>
-                <div style={{ textAlign: "right", fontFamily: "'Baloo 2'", fontSize: 12, color: C.green }}>
-                  {e.credit > 0 ? `₹${fmt(e.credit)}` : "—"}
-                </div>
-              </div>
-            ))}
+              );
+            })}
 
             <div style={{ padding: "11px 14px", background: C.cream,
               borderTop: `2px solid ${C.border}`, display: "flex", justifyContent: "space-between" }}>
