@@ -7,6 +7,10 @@ export default function Khata({ party, onBack }) {
   const { parties, payments, ledger, savePayment, deletePayment, trueBalance, computePartyInterest } = useApp();
   const bankAccounts = parties.filter(p => p.type === "Bank");
   const [showPay, setShowPay]         = useState(false);
+  const [showNakad, setShowNakad]     = useState(false);
+  const [nakadAmt, setNakadAmt]       = useState("");
+  const [nakadDate, setNakadDate]     = useState(new Date().toISOString().split("T")[0]);
+  const [nakadNote, setNakadNote]     = useState("");
   const [selEntry, setSelEntry]       = useState(null); // selected ledger entry
   const [pinAction, setPinAction]     = useState(null); // "edit" | "delete"
   const [editingPay, setEditingPay]   = useState(null); // payment data pre-filled for edit
@@ -161,9 +165,15 @@ export default function Khata({ party, onBack }) {
             <div>
               <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 11 }}>Current Balance</p>
               <p style={{ fontFamily: "'Baloo 2'", fontWeight: 800, fontSize: 28, color: C.white }}>₹{fmt(displayBal)}</p>
-              {accruedInterest > 0 && (
+              {/* Only show interest when farmer owes arhtiya (balance negative = isCredit false) */}
+              {accruedInterest > 0 && !isCredit && (
                 <p style={{ color: "rgba(255,255,255,0.85)", fontSize: 12, marginTop: 2 }}>
                   + ₹{fmt(accruedInterest)} byaaj (accrued)
+                </p>
+              )}
+              {isCredit && party.interest_rate > 0 && (
+                <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 11, marginTop: 2 }}>
+                  ✓ Byaaj free (farmer ka paisa hai)
                 </p>
               )}
             </div>
@@ -175,6 +185,13 @@ export default function Khata({ party, onBack }) {
             style={{ marginTop: 14, background: "rgba(255,255,255,0.18)", border: "1.5px solid rgba(255,255,255,0.35)", borderRadius: 10, padding: "10px 0", color: C.white, fontSize: 13, fontWeight: 600, width: "100%", cursor: "pointer" }}>
             💳 Payment Record Karein
           </button>
+          {/* Nakad Dena — cash advance to farmer from his own balance or as new loan */}
+          {isFarmer && (
+            <button onClick={() => setShowNakad(v => !v)}
+              style={{ marginTop: 8, background: "rgba(255,255,255,0.12)", border: "1.5px solid rgba(255,255,255,0.25)", borderRadius: 10, padding: "10px 0", color: C.white, fontSize: 13, fontWeight: 600, width: "100%", cursor: "pointer" }}>
+              💵 Nakad Dena (Cash Advance)
+            </button>
+          )}
         </div>
       </div>
 
@@ -209,6 +226,48 @@ export default function Khata({ party, onBack }) {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <Btn variant="secondary" onClick={() => setShowPay(false)}>Raddh</Btn>
               <Btn onClick={handlePaySave} disabled={busy}>{busy ? "..." : "Save"}</Btn>
+            </div>
+          </Card>
+        )}
+
+        {/* Nakad Dena form */}
+        {showNakad && (
+          <Card style={{ marginBottom: 14, border: `1.5px solid ${accent}` }}>
+            <p style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>💵 Nakad Dena — Cash Advance</p>
+            {bal > 0 ? (
+              <p style={{ fontSize: 11, color: C.green, marginBottom: 10 }}>
+                ✓ Farmer ka balance: ₹{fmt(bal)} — is amount tak interest free hai
+              </p>
+            ) : (
+              <p style={{ fontSize: 11, color: C.red, marginBottom: 10 }}>
+                ⚠ Farmer pehle se ₹{fmt(Math.abs(bal))} mein udhar hai — aur dene par byaaj lagega
+              </p>
+            )}
+            <Field label="Raqam (₹)" value={nakadAmt} onChange={setNakadAmt} type="number" prefix="₹" required />
+            <Field label="Tarikh" value={nakadDate} onChange={setNakadDate} type="date" />
+            <Field label="Note (optional)" value={nakadNote} onChange={setNakadNote} placeholder="Koi baat likhein..." />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 4 }}>
+              <Btn variant="secondary" onClick={() => setShowNakad(false)}>Raddh</Btn>
+              <Btn onClick={async () => {
+                if (!nakadAmt || parseFloat(nakadAmt) <= 0) return;
+                setBusy(true);
+                try {
+                  await savePayment({
+                    party_id: party.id,
+                    date: nakadDate,
+                    type: "cash_payment",
+                    amount: parseFloat(nakadAmt),
+                    reference: "",
+                    narration: nakadNote || "Nakad diya (cash advance)",
+                  });
+                  setShowNakad(false);
+                  setNakadAmt(""); setNakadNote("");
+                  setNakadDate(new Date().toISOString().split("T")[0]);
+                } catch(e) { setError(e.message); }
+                finally { setBusy(false); }
+              }} disabled={busy || !nakadAmt}>
+                {busy ? "..." : "✓ Save"}
+              </Btn>
             </div>
           </Card>
         )}
@@ -259,7 +318,8 @@ export default function Khata({ party, onBack }) {
           {party.interest_rate > 0 && (
             <p style={{ fontSize: 12 }}>
               Byaaj dar: {party.interest_rate}% / saal
-              {accruedInterest > 0 && ` · Abhi tak: ₹${fmt(accruedInterest)}`}
+              {accruedInterest > 0 && !isCredit && ` · Abhi tak: ₹${fmt(accruedInterest)}`}
+              {isCredit && " · Abhi byaaj nahi (balance positive hai)"}
             </p>
           )}
           {party.notes && <p style={{ fontSize: 12, marginTop: 4, color: C.inkMid }}>{party.notes}</p>}
