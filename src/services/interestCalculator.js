@@ -174,6 +174,7 @@ export function buildInterestTrail(party, partyLedger, today = new Date()) {
         principal:    balance,
         months:       Math.round(months * 100) / 100,
         interest:     Math.round(interest * 100) / 100,
+        monthlyRate,  // pass monthly rate for display
         isCompounding: false,
         label:        formatPeriodLabel(prevDate, today, months),
       });

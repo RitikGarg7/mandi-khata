@@ -358,7 +358,7 @@ function ByaajTrailPopover({ party, trail, accruedInterest, onClose }) {
                           {segment.label}
                         </p>
                         <p style={{ fontSize: 11, color: C.inkLight, marginTop: 3 }}>
-                          ₹{fmt(segment.principal)} × {party.interest_rate}% × {segment.months} mahine
+                          ₹{fmt(segment.principal)} × {((segment.monthlyRate) || (party.interest_rate/12)).toFixed(2)}% × {segment.months} mahine
                         </p>
                       </div>
                       <div style={{ textAlign: "right", flexShrink: 0 }}>
