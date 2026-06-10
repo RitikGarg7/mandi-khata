@@ -82,8 +82,11 @@ function monthsBetween(fromDate, toDate) {
  * ]
  */
 export function buildInterestTrail(party, partyLedger, today = new Date()) {
-  const monthlyRate = party.interest_rate || 0;
-  if (monthlyRate <= 0) return [];
+  // interest_rate is stored as annual % (e.g. 12 = 12% per year = 1% per month)
+  // Divide by 12 to get monthly rate for calculations
+  const annualRate  = party.interest_rate || 0;
+  const monthlyRate = annualRate / 12;
+  if (annualRate <= 0) return [];
 
   // Build timeline of all balance-changing events
   const events = [];

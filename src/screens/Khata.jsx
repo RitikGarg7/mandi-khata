@@ -255,7 +255,7 @@ export default function Khata({ party, onBack }) {
           )}
           {party.interest_rate > 0 && (
             <p style={{ fontSize: 12, marginTop: 2 }}>
-              Byaaj dar: {party.interest_rate}% / mahina
+              Byaaj dar: {party.interest_rate}% / saal
               {k.accruedInterest > 0 && k.farmerOwes && ` · Abhi tak: ₹${fmt(k.accruedInterest)}`}
               {k.arhtiyaOwes && " · Abhi byaaj nahi"}
             </p>
@@ -296,7 +296,7 @@ function ByaajTrailPopover({ party, trail, accruedInterest, onClose }) {
                 📈 Byaaj Trail
               </p>
               <p style={{ fontSize: 12, color: C.inkLight, marginTop: 2 }}>
-                {party.name} · {party.interest_rate}% / mahina
+                {party.name} · {party.interest_rate}% / saal ({(party.interest_rate/12).toFixed(2)}% / mahina)
               </p>
             </div>
             <div style={{ textAlign: "right" }}>
