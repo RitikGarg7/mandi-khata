@@ -165,13 +165,14 @@ export default function Khata({ party, onBack }) {
             <div>
               <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 11 }}>Current Balance</p>
               <p style={{ fontFamily: "'Baloo 2'", fontWeight: 800, fontSize: 28, color: C.white }}>₹{fmt(displayBal)}</p>
-              {/* Only show interest when farmer owes arhtiya (balance negative = isCredit false) */}
-              {accruedInterest > 0 && !isCredit && (
+              {/* bal > 0 = farmer owes arhtiya = interest accrues */}
+              {/* bal < 0 = arhtiya owes farmer = interest free */}
+              {accruedInterest > 0 && bal > 0 && (
                 <p style={{ color: "rgba(255,255,255,0.85)", fontSize: 12, marginTop: 2 }}>
                   + ₹{fmt(accruedInterest)} byaaj (accrued)
                 </p>
               )}
-              {isCredit && party.interest_rate > 0 && (
+              {bal < 0 && party.interest_rate > 0 && (
                 <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 11, marginTop: 2 }}>
                   ✓ Byaaj free (farmer ka paisa hai)
                 </p>
@@ -314,12 +315,17 @@ export default function Khata({ party, onBack }) {
         <div style={{ marginTop: 14, padding: "12px 14px", background: C.cream, borderRadius: 10, border: `1px solid ${C.border}` }}>
           <p style={{ fontSize: 11, color: C.inkLight, marginBottom: 4 }}>Party Info</p>
           {party.gstin && <p style={{ fontSize: 12 }}>GSTIN: {party.gstin}</p>}
-          {party.opening_balance > 0 && <p style={{ fontSize: 12 }}>Opening Balance: ₹{fmt(party.opening_balance)}</p>}
+          {party.opening_balance > 0 && (
+            <p style={{ fontSize: 12 }}>
+              Opening Balance: ₹{fmt(party.opening_balance)}
+              {party.opening_balance_date && ` · ${new Date(party.opening_balance_date).toLocaleDateString("hi-IN", { day: "numeric", month: "short", year: "numeric" })}`}
+            </p>
+          )}
           {party.interest_rate > 0 && (
             <p style={{ fontSize: 12 }}>
               Byaaj dar: {party.interest_rate}% / saal
-              {accruedInterest > 0 && !isCredit && ` · Abhi tak: ₹${fmt(accruedInterest)}`}
-              {isCredit && " · Abhi byaaj nahi (balance positive hai)"}
+              {accruedInterest > 0 && bal > 0 && ` · Abhi tak: ₹${fmt(accruedInterest)}`}
+              {bal <= 0 && " · Abhi byaaj nahi (balance positive hai)"}
             </p>
           )}
           {party.notes && <p style={{ fontSize: 12, marginTop: 4, color: C.inkMid }}>{party.notes}</p>}
