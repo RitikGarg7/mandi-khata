@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useApp } from "../context/AppContext";
-import { Shell, C, Card, TopBar, BottomNav, Tag, fmt } from "../components/ui";
+import { Shell, C, Card, TopBar, BottomNav, fmt } from "../components/ui";
 
 export default function Parties({ nav }) {
   const { parties, trueBalance } = useApp();
-  const [tab, setTab] = useState("farmers");
+  const [tab, setTab]       = useState("farmers");
   const [search, setSearch] = useState("");
 
   const list = parties
@@ -25,7 +25,8 @@ export default function Parties({ nav }) {
         title="Parties"
         right={
           <button onClick={() => nav("newParty")}
-            style={{ background: C.saffron, border: "none", borderRadius: 8, padding: "6px 13px", color: C.white, fontSize: 12, fontWeight: 700 }}>
+            style={{ background: C.saffron, border: "none", borderRadius: 8,
+              padding: "6px 13px", color: C.white, fontSize: 12, fontWeight: 700 }}>
             + Naya
           </button>
         }
@@ -36,13 +37,17 @@ export default function Parties({ nav }) {
           <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontSize: 14 }}>🔍</span>
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Naam ya jagah dhundhein..."
-            style={{ width: "100%", padding: "11px 14px 11px 36px", borderRadius: 10, border: `1.5px solid ${C.border}`, background: C.white, fontSize: 13 }} />
+            style={{ width: "100%", padding: "11px 14px 11px 36px", borderRadius: 10,
+              border: `1.5px solid ${C.border}`, background: C.white, fontSize: 13 }} />
         </div>
 
         <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
           {[["farmers","👨‍🌾 Kisan"],["buyers","🏭 Buyer"],["all","Sab"]].map(([id, label]) => (
             <button key={id} onClick={() => setTab(id)}
-              style={{ padding: "7px 16px", borderRadius: 20, fontSize: 12, fontWeight: 700, background: tab === id ? C.saffron : C.white, color: tab === id ? C.white : C.inkMid, border: `1.5px solid ${tab === id ? C.saffron : C.border}` }}>
+              style={{ padding: "7px 16px", borderRadius: 20, fontSize: 12, fontWeight: 700,
+                background: tab === id ? C.saffron : C.white,
+                color: tab === id ? C.white : C.inkMid,
+                border: `1.5px solid ${tab === id ? C.saffron : C.border}` }}>
               {label}
             </button>
           ))}
@@ -59,28 +64,58 @@ export default function Parties({ nav }) {
         )}
 
         {list.map(p => {
-          const isFarmer = p.type === "Farmer";
-          const bal = trueBalance(p);
+          const isFarmer  = p.type === "Farmer";
+          const bal        = trueBalance(p);
           const displayBal = Math.abs(bal);
-          const isOwed = bal > 0;
+          const isOwed     = bal > 0;
+          const hasPhone   = p.phone && p.phone.trim().length >= 10;
 
           return (
-            <Card key={p.id} onClick={() => nav("khata", p)} style={{ cursor: "pointer" }}>
+            <Card key={p.id} style={{ cursor: "pointer" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  <div style={{ width: 42, height: 42, borderRadius: 10, background: isFarmer ? C.pinkLight : C.saffronLight, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
+                {/* Left: tap to open khata */}
+                <div onClick={() => nav("khata", p)}
+                  style={{ display: "flex", gap: 10, alignItems: "center", flex: 1 }}>
+                  <div style={{ width: 42, height: 42, borderRadius: 10,
+                    background: isFarmer ? C.pinkLight : C.saffronLight,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 20, flexShrink: 0 }}>
                     {isFarmer ? "👨‍🌾" : "🏭"}
                   </div>
                   <div>
                     <div style={{ fontWeight: 700, fontSize: 14 }}>{p.name}</div>
-                    <div style={{ fontSize: 11, color: C.inkLight, marginTop: 2 }}>{p.place} · {p.phone || "—"}</div>
+                    <div style={{ fontSize: 11, color: C.inkLight, marginTop: 2 }}>
+                      {p.place && <span>{p.place} · </span>}
+                      {hasPhone
+                        ? <span>📱 {p.phone}</span>
+                        : <span style={{ color: "#F59E0B" }}>⚠ Phone nahi</span>
+                      }
+                    </div>
                   </div>
                 </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontFamily: "'Baloo 2'", fontWeight: 700, fontSize: 15, color: isOwed ? C.red : C.green }}>
-                    {displayBal === 0 ? "✓ Saaf" : `₹${fmt(displayBal)}`}
+
+                {/* Right: balance + edit button */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div onClick={() => nav("khata", p)} style={{ textAlign: "right", cursor: "pointer" }}>
+                    <div style={{ fontFamily: "'Baloo 2'", fontWeight: 700, fontSize: 15,
+                      color: isOwed ? C.red : C.green }}>
+                      {displayBal === 0 ? "✓ Saaf" : `₹${fmt(displayBal)}`}
+                    </div>
+                    {isOwed && (
+                      <div style={{ fontSize: 10, color: C.inkLight }}>
+                        {isFarmer ? "Loan baaki" : "Lena baaki"}
+                      </div>
+                    )}
                   </div>
-                  {isOwed && <div style={{ fontSize: 10, color: C.inkLight }}>{isFarmer ? "Loan baaki" : "Lena baaki"}</div>}
+
+                  {/* Edit button */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); nav("newParty", p); }}
+                    style={{ background: C.cream, border: `1px solid ${C.border}`,
+                      borderRadius: 8, padding: "6px 10px", fontSize: 13,
+                      cursor: "pointer", color: C.inkMid, flexShrink: 0 }}>
+                    ✏️
+                  </button>
                 </div>
               </div>
             </Card>

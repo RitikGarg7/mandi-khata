@@ -16,7 +16,8 @@ function Router() {
   const { unlock, loadAll } = useApp();
   const [screen, setScreen]   = useState("login");
   const [selParty, setSelParty] = useState(null);
-  const [editBill, setEditBill] = useState(null);
+  const [editBill, setEditBill]   = useState(null);
+  const [editParty, setEditParty] = useState(null);
   const [hist, setHist]         = useState([]);
 
   // ── Firebase auth listener ────────────────────────────────────────────────
@@ -59,7 +60,9 @@ function Router() {
   // ── Navigation helpers ────────────────────────────────────────────────────
   const nav = (to, data) => {
     setHist(h => [...h, screen]);
-    if (to === "khata" && data) setSelParty(data);
+    if (to === "khata" && data)   setSelParty(data);
+    if (to === "newParty" && data) setEditParty(data);
+    else if (to === "newParty")    setEditParty(null);
     setEditBill((to === "newI" || to === "newJ") ? (data || null) : null);
     setScreen(to);
     // Push a browser history entry so swipe-back has something to pop
@@ -93,7 +96,7 @@ function Router() {
     parties:  <Parties nav={nav} />,
     bills:    <Bills nav={nav} />,
     balance:  <Balance nav={nav} />,
-    newParty: <NewParty onBack={back} />,
+    newParty: <NewParty onBack={back} editData={editParty} />,
     newJ:     <NewFormJ onBack={back} nav={nav} editData={editBill} />,
     newI:     <NewFormI onBack={back} nav={nav} editData={editBill} />,
     khata:    <Khata party={selParty} onBack={back} />,
