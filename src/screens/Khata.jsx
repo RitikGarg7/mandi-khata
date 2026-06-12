@@ -44,8 +44,10 @@ export default function Khata({ party, onBack }) {
       {k.showInterest && (
         <ByaajTrailPopover
           party={party}
-          trail={k.interestTrail}
+          entryTrails={k.interestTrail}
           accruedInterest={k.accruedInterest}
+          mode={k.interestMode}
+          onModeChange={k.setInterestMode}
           onClose={() => k.setShowInterest(false)}
         />
       )}
@@ -279,68 +281,23 @@ export default function Khata({ party, onBack }) {
 
 // ── Byaaj Trail Popover ───────────────────────────────────────────────────────
 
-function ByaajTrailPopover({ party, trail, accruedInterest, onClose }) {
-  // dateOverrides: { [segmentIndex]: { from: "YYYY-MM-DD", to: "YYYY-MM-DD" } }
-  // Only non-compounding rows can have overrides (Option A — each row independent)
-  const [dateOverrides, setDateOverrides] = React.useState({});
+function ByaajTrailPopover({ party, entryTrails, accruedInterest, mode, onModeChange, onClose }) {
+  const totalInterest = entryTrails.reduce((s, t) => s + t.totalInterest, 0);
+  const annualRate    = party.interest_rate || 0;
+  const monthlyRate   = (annualRate / 12).toFixed(2);
 
-  // Helper: get display date for a segment (overridden or original)
-  const getFrom = (i, seg) =>
-    dateOverrides[i]?.from || toDateStr(seg.fromDate);
-  const getTo = (i, seg) =>
-    dateOverrides[i]?.to || toDateStr(seg.toDate);
-
-  // Recalculate interest for a segment using overridden dates
-  const calcSegmentInterest = (seg, fromStr, toStr) => {
-    const from = new Date(fromStr);
-    const to   = new Date(toStr);
-    if (to <= from) return 0;
-    const diffMs   = to - from;
-    const days     = diffMs / (1000 * 60 * 60 * 24);
-    const monthlyR = (party.interest_rate || 0) / 12;
-    // Use days/30 — mandi 30-day month convention
-    return seg.principal * (monthlyR / 100) * (days / 30);
+  // Format date as "2 Jan 2026"
+  const fmtDate = (d) => {
+    if (!d) return "";
+    return new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
   };
-
-  // Build effective segments with overrides applied
-  const effectiveTrail = trail.map((seg, i) => {
-    if (seg.isCompounding) return seg;
-    const from     = getFrom(i, seg);
-    const to       = getTo(i, seg);
-    const interest = dateOverrides[i]
-      ? calcSegmentInterest(seg, from, to)
-      : seg.interest;
-    const days = dateOverrides[i]
-      ? Math.round((new Date(to) - new Date(from)) / (1000 * 60 * 60 * 24))
-      : null;
-    return { ...seg, effectiveInterest: interest, effectiveDays: days, fromStr: from, toStr: to };
-  });
-
-  const totalInterest = effectiveTrail
-    .filter(s => !s.isCompounding)
-    .reduce((sum, s) => sum + (s.effectiveInterest ?? s.interest), 0);
-
-  const setOverride = (i, key, val) =>
-    setDateOverrides(prev => ({
-      ...prev,
-      [i]: { ...(prev[i] || {}), [key]: val }
-    }));
-
-  const resetOverride = (i) =>
-    setDateOverrides(prev => {
-      const next = { ...prev };
-      delete next[i];
-      return next;
-    });
-
-  const monthlyRate = ((party.interest_rate || 0) / 12).toFixed(2);
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
       zIndex: 200, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}
       onClick={onClose}>
       <div style={{ background: C.white, borderRadius: "20px 20px 0 0",
-        maxHeight: "85vh", display: "flex", flexDirection: "column" }}
+        maxHeight: "88vh", display: "flex", flexDirection: "column" }}
         onClick={e => e.stopPropagation()}>
 
         {/* Handle */}
@@ -350,120 +307,129 @@ function ByaajTrailPopover({ party, trail, accruedInterest, onClose }) {
 
         {/* Header */}
         <div style={{ padding: "8px 18px 12px", borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div>
               <p style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Baloo 2'", color: C.ink }}>
                 📈 Byaaj Trail
               </p>
               <p style={{ fontSize: 12, color: C.inkLight, marginTop: 2 }}>
-                {party.name} · {party.interest_rate}% / saal ({monthlyRate}% / mahina)
+                {party.name} · {annualRate}% / saal · {monthlyRate}% / mahina
               </p>
-              {Object.keys(dateOverrides).length > 0 && (
-                <button onClick={() => setDateOverrides({})}
-                  style={{ marginTop: 4, background: C.saffronLight, border: `1px solid ${C.saffron}`,
-                    borderRadius: 6, padding: "2px 8px", fontSize: 11, color: C.saffron,
-                    cursor: "pointer", fontWeight: 600 }}>
-                  ↺ Reset sab dates
-                </button>
-              )}
+              {/* 360 / 365 toggle */}
+              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                {["365", "360"].map(m => (
+                  <button key={m} onClick={() => onModeChange(m)}
+                    style={{
+                      padding: "4px 14px", borderRadius: 20, fontSize: 12, fontWeight: 700,
+                      cursor: "pointer", border: "none",
+                      background: mode === m ? C.saffron : C.cream,
+                      color:      mode === m ? C.white   : C.inkMid,
+                    }}>
+                    {m} din
+                  </button>
+                ))}
+                <span style={{ fontSize: 11, color: C.inkLight, alignSelf: "center" }}>
+                  {mode === "365" ? "Exact calendar days" : "Har mahina = 30 din"}
+                </span>
+              </div>
             </div>
-            <div style={{ textAlign: "right" }}>
+            <div style={{ textAlign: "right", flexShrink: 0 }}>
               <p style={{ fontSize: 11, color: C.inkLight }}>Kul Byaaj</p>
-              <p style={{ fontFamily: "'Baloo 2'", fontWeight: 800, fontSize: 20, color: C.red }}>
+              <p style={{ fontFamily: "'Baloo 2'", fontWeight: 800, fontSize: 22, color: C.red }}>
                 ₹{fmt(totalInterest)}
               </p>
             </div>
           </div>
         </div>
 
-        {/* Trail rows */}
-        <div style={{ overflowY: "auto", padding: "12px 18px 28px" }}>
-          {trail.length === 0 ? (
-            <p style={{ textAlign: "center", color: C.inkLight, padding: "20px 0", fontSize: 13 }}>
+        {/* Entry trails */}
+        <div style={{ overflowY: "auto", padding: "14px 18px 32px" }}>
+          {entryTrails.length === 0 ? (
+            <p style={{ textAlign: "center", color: C.inkLight, padding: "24px 0", fontSize: 13 }}>
               Abhi tak koi byaaj nahi
             </p>
           ) : (
-            effectiveTrail.map((segment, i) => (
-              <div key={i}>
-                {segment.isCompounding ? (
-                  /* Compounding row — not editable */
-                  <div style={{ display: "flex", alignItems: "center", gap: 10,
-                    margin: "10px 0", padding: "8px 12px",
-                    background: C.goldLight, borderRadius: 10, border: `1px solid ${C.gold}` }}>
-                    <span style={{ fontSize: 16 }}>🔄</span>
-                    <div style={{ flex: 1 }}>
-                      <p style={{ fontSize: 12, fontWeight: 700, color: C.gold }}>
-                        1 April — Byaaj compound hua
+            entryTrails.map((et, ei) => (
+              <div key={ei} style={{ marginBottom: 20 }}>
+                {/* Entry header */}
+                <div style={{ background: C.cream, borderRadius: "10px 10px 0 0",
+                  padding: "10px 14px", borderBottom: `2px solid ${C.saffron}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>
+                        {et.entry.narration}
                       </p>
-                      <p style={{ fontSize: 11, color: C.inkMid, marginTop: 2 }}>
-                        ₹{fmt(segment.addedInterest)} byaaj principal mein joda
+                      <p style={{ fontSize: 11, color: C.inkLight, marginTop: 2 }}>
+                        {fmtDate(et.entry.date)} · ₹{fmt(et.entry.amount)} @ {annualRate}%/saal
+                      </p>
+                      <p style={{ fontSize: 10, color: C.saffron, marginTop: 2 }}>
+                        Byaaj shuru: {fmtDate(new Date(new Date(et.entry.date).getTime() + 86400000))}
+                        {" "}(pehla din choda)
                       </p>
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <p style={{ fontSize: 10, color: C.inkLight }}>Naya principal</p>
-                      <p style={{ fontFamily: "'Baloo 2'", fontWeight: 700, fontSize: 13, color: C.ink }}>
-                        ₹{fmt(segment.newPrincipal)}
+                      <p style={{ fontSize: 11, color: C.inkLight }}>Kul byaaj</p>
+                      <p style={{ fontFamily: "'Baloo 2'", fontWeight: 800, fontSize: 16, color: C.red }}>
+                        +₹{fmt(et.totalInterest)}
                       </p>
                     </div>
                   </div>
-                ) : (
-                  /* Regular interest period row — with editable date pickers */
-                  <div style={{ padding: "12px 0",
-                    borderBottom: i < effectiveTrail.length - 1 ? `1px solid ${C.border}` : "none",
-                    background: dateOverrides[i] ? C.saffronLight : "transparent",
-                    borderRadius: dateOverrides[i] ? 10 : 0,
-                    padding: dateOverrides[i] ? "10px 8px" : "12px 0",
-                    marginBottom: dateOverrides[i] ? 4 : 0 }}>
+                </div>
 
-                    {/* Date pickers row */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                      <input type="date" value={segment.fromStr}
-                        onChange={e => setOverride(i, "from", e.target.value)}
-                        style={{ flex: 1, border: `1.5px solid ${dateOverrides[i] ? C.saffron : C.border}`,
-                          borderRadius: 8, padding: "6px 8px", fontSize: 12,
-                          background: C.white, color: C.ink }} />
-                      <span style={{ fontSize: 12, color: C.inkLight, flexShrink: 0 }}>→</span>
-                      <input type="date" value={segment.toStr}
-                        onChange={e => setOverride(i, "to", e.target.value)}
-                        style={{ flex: 1, border: `1.5px solid ${dateOverrides[i] ? C.saffron : C.border}`,
-                          borderRadius: 8, padding: "6px 8px", fontSize: 12,
-                          background: C.white, color: C.ink }} />
-                      {dateOverrides[i] && (
-                        <button onClick={() => resetOverride(i)}
-                          style={{ background: "none", border: "none", fontSize: 16,
-                            cursor: "pointer", color: C.inkLight, flexShrink: 0 }}>↺</button>
+                {/* Segments */}
+                <div style={{ border: `1px solid ${C.border}`, borderTop: "none",
+                  borderRadius: "0 0 10px 10px", overflow: "hidden" }}>
+                  {et.segments.map((seg, si) => (
+                    <div key={si}>
+                      {seg.isCompounding ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 10,
+                          padding: "8px 14px", background: C.goldLight,
+                          borderTop: `1px solid ${C.border}` }}>
+                          <span style={{ fontSize: 14 }}>🔄</span>
+                          <div style={{ flex: 1 }}>
+                            <p style={{ fontSize: 11, fontWeight: 700, color: C.gold }}>
+                              1 April — Compound hua
+                            </p>
+                            <p style={{ fontSize: 10, color: C.inkMid }}>
+                              +₹{fmt(seg.addedInterest)} principal mein joda
+                            </p>
+                          </div>
+                          <div style={{ textAlign: "right" }}>
+                            <p style={{ fontSize: 10, color: C.inkLight }}>Naya principal</p>
+                            <p style={{ fontFamily: "'Baloo 2'", fontWeight: 700, fontSize: 12 }}>
+                              ₹{fmt(seg.newPrincipal)}
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", justifyContent: "space-between",
+                          alignItems: "center", padding: "10px 14px",
+                          borderTop: si > 0 ? `1px solid ${C.border}` : "none",
+                          background: C.white }}>
+                          <div>
+                            <p style={{ fontSize: 12, color: C.ink, fontWeight: 500 }}>
+                              {fmtDate(seg.fromDate)} → {fmtDate(seg.toDate)}
+                            </p>
+                            <p style={{ fontSize: 11, color: C.inkLight, marginTop: 2 }}>
+                              ₹{fmt(seg.principal)} × {annualRate}% × {seg.days} din / {mode}
+                            </p>
+                          </div>
+                          <p style={{ fontFamily: "'Baloo 2'", fontWeight: 700,
+                            fontSize: 14, color: C.red, flexShrink: 0 }}>
+                            +₹{fmt(seg.interest)}
+                          </p>
+                        </div>
                       )}
                     </div>
-
-                    {/* Days count + interest */}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div>
-                        <p style={{ fontSize: 11, color: C.inkLight }}>
-                          ₹{fmt(segment.principal)} × {monthlyRate}% ×{" "}
-                          {segment.effectiveDays != null
-                            ? `${segment.effectiveDays} din`
-                            : `${segment.months} mahine`}
-                        </p>
-                        {segment.effectiveDays != null && (
-                          <p style={{ fontSize: 10, color: C.saffron, marginTop: 2, fontWeight: 600 }}>
-                            ✎ Modified
-                          </p>
-                        )}
-                      </div>
-                      <p style={{ fontFamily: "'Baloo 2'", fontWeight: 700, fontSize: 15,
-                        color: dateOverrides[i] ? C.saffron : C.red }}>
-                        + ₹{fmt(segment.effectiveInterest ?? segment.interest)}
-                      </p>
-                    </div>
-                  </div>
-                )}
+                  ))}
+                </div>
               </div>
             ))
           )}
 
-          {/* Summary footer */}
-          {trail.length > 0 && (
-            <div style={{ marginTop: 16, padding: "14px", background: C.cream,
+          {/* Grand total */}
+          {entryTrails.length > 0 && (
+            <div style={{ padding: "14px", background: C.cream,
               borderRadius: 12, border: `1px solid ${C.border}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                 <span style={{ fontSize: 13, color: C.inkMid }}>Principal (Original)</span>
@@ -472,23 +438,18 @@ function ByaajTrailPopover({ party, trail, accruedInterest, onClose }) {
                 </span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                <span style={{ fontSize: 13, color: C.inkMid }}>Kul Byaaj</span>
+                <span style={{ fontSize: 13, color: C.inkMid }}>Kul Byaaj ({mode} din system)</span>
                 <span style={{ fontFamily: "'Baloo 2'", fontWeight: 700, fontSize: 13, color: C.red }}>
-                  + ₹{fmt(totalInterest)}
+                  +₹{fmt(totalInterest)}
                 </span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between",
                 paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
                 <span style={{ fontSize: 14, fontWeight: 700 }}>Kul Baaki</span>
-                <span style={{ fontFamily: "'Baloo 2'", fontWeight: 800, fontSize: 16, color: C.red }}>
+                <span style={{ fontFamily: "'Baloo 2'", fontWeight: 800, fontSize: 18, color: C.red }}>
                   ₹{fmt(parseFloat(party.opening_balance || 0) + totalInterest)}
                 </span>
               </div>
-              {Object.keys(dateOverrides).length > 0 && (
-                <p style={{ fontSize: 10, color: C.saffron, marginTop: 8, textAlign: "center" }}>
-                  ⚠ Kuch rows modified hain — reset karein original values ke liye
-                </p>
-              )}
             </div>
           )}
         </div>
@@ -497,12 +458,6 @@ function ByaajTrailPopover({ party, trail, accruedInterest, onClose }) {
   );
 }
 
-// Helper: convert Date object to YYYY-MM-DD string
-function toDateStr(date) {
-  if (!date) return "";
-  const d = new Date(date);
-  return d.toISOString().split("T")[0];
-}
 
 // ── Entry detail bottom sheet ─────────────────────────────────────────────────
 

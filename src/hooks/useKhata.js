@@ -8,7 +8,7 @@
 import { useState } from "react";
 import { useApp } from "../context/AppContext";
 import { buildLedgerWithRunningBalance, calcTrueBalance } from "../services/ledgerService";
-import { buildInterestTrail, computeInterest } from "../services/interestCalculator";
+import { buildPartyInterestTrail, computeInterest } from "../services/interestCalculator";
 
 export function useKhata(party) {
   const { parties, payments, ledger, savePayment, deletePayment } = useApp();
@@ -16,6 +16,7 @@ export function useKhata(party) {
 
   // ── UI state ────────────────────────────────────────────────────────────────
   const [showPay, setShowPay]           = useState(false);
+  const [interestMode, setInterestMode] = useState("365"); // "365" or "360"
   const [showNakad, setShowNakad]       = useState(false);
   const [showInterest, setShowInterest] = useState(false); // byaaj trail popover
   const [selEntry, setSelEntry]         = useState(null);
@@ -46,11 +47,14 @@ export function useKhata(party) {
 
   // Interest: only when farmer owes arhtiya (bal > 0)
   const accruedInterest = party && farmerOwes
-    ? computeInterest(party, partyLedger)
+    ? computeInterest(party, partyLedger, new Date(), interestMode)
     : 0;
 
-  // Interest trail for popover
-  const interestTrail = party ? buildInterestTrail(party, partyLedger) : [];
+  // Full party interest trail for popover (per-entry breakdown)
+  const partyInterestData = party && farmerOwes
+    ? buildPartyInterestTrail(party, partyLedger, new Date(), interestMode)
+    : { entryTrails: [], totalInterest: 0 };
+  const interestTrail = partyInterestData.entryTrails;
 
   // ── Payment handlers ────────────────────────────────────────────────────────
   const handlePaySave = async () => {
@@ -146,6 +150,7 @@ export function useKhata(party) {
     showPay, setShowPay,
     showNakad, setShowNakad,
     showInterest, setShowInterest,
+    interestMode, setInterestMode,
     selEntry, setSelEntry,
     pinAction, setPinAction,
     editingPay,
