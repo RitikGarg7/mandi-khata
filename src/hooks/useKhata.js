@@ -50,11 +50,11 @@ export function useKhata(party) {
     ? computeInterest(party, partyLedger, new Date(), interestMode)
     : 0;
 
-  // Full party interest trail for popover (per-entry breakdown)
+  // Full party interest trail for popover
   const partyInterestData = party && farmerOwes
     ? buildPartyInterestTrail(party, partyLedger, new Date(), interestMode)
-    : { entryTrails: [], totalInterest: 0 };
-  const interestTrail = partyInterestData.entryTrails;
+    : { segments: [], totalInterest: 0 };
+  const interestTrail = partyInterestData.segments || [];
 
   // ── Payment handlers ────────────────────────────────────────────────────────
   const handlePaySave = async () => {

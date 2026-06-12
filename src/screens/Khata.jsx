@@ -281,16 +281,14 @@ export default function Khata({ party, onBack }) {
 
 // ── Byaaj Trail Popover ───────────────────────────────────────────────────────
 
-function ByaajTrailPopover({ party, entryTrails, accruedInterest, mode, onModeChange, onClose }) {
-  const totalInterest = entryTrails.reduce((s, t) => s + t.totalInterest, 0);
-  const annualRate    = party.interest_rate || 0;
-  const monthlyRate   = (annualRate / 12).toFixed(2);
+function ByaajTrailPopover({ party, entryTrails: segments, accruedInterest, mode, onModeChange, onClose }) {
+  const annualRate  = party.interest_rate || 0;
+  const totalInterest = segments
+    .filter(s => !s.isCompounding && !s.isEvent)
+    .reduce((sum, s) => sum + (s.interest || 0), 0);
 
-  // Format date as "2 Jan 2026"
-  const fmtDate = (d) => {
-    if (!d) return "";
-    return new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
-  };
+  const fmtDate = (d) => new Date(d).toLocaleDateString("en-IN",
+    { day: "numeric", month: "short", year: "numeric" });
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
@@ -313,22 +311,20 @@ function ByaajTrailPopover({ party, entryTrails, accruedInterest, mode, onModeCh
                 📈 Byaaj Trail
               </p>
               <p style={{ fontSize: 12, color: C.inkLight, marginTop: 2 }}>
-                {party.name} · {annualRate}% / saal · {monthlyRate}% / mahina
+                {party.name} · {annualRate}% / saal · {(annualRate/12).toFixed(2)}% / mahina
               </p>
               {/* 360 / 365 toggle */}
-              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+              <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center" }}>
                 {["365", "360"].map(m => (
                   <button key={m} onClick={() => onModeChange(m)}
-                    style={{
-                      padding: "4px 14px", borderRadius: 20, fontSize: 12, fontWeight: 700,
-                      cursor: "pointer", border: "none",
+                    style={{ padding: "4px 14px", borderRadius: 20, fontSize: 12,
+                      fontWeight: 700, cursor: "pointer", border: "none",
                       background: mode === m ? C.saffron : C.cream,
-                      color:      mode === m ? C.white   : C.inkMid,
-                    }}>
+                      color:      mode === m ? C.white   : C.inkMid }}>
                     {m} din
                   </button>
                 ))}
-                <span style={{ fontSize: 11, color: C.inkLight, alignSelf: "center" }}>
+                <span style={{ fontSize: 11, color: C.inkLight }}>
                   {mode === "365" ? "Exact calendar days" : "Har mahina = 30 din"}
                 </span>
               </div>
@@ -342,94 +338,92 @@ function ByaajTrailPopover({ party, entryTrails, accruedInterest, mode, onModeCh
           </div>
         </div>
 
-        {/* Entry trails */}
+        {/* Segments */}
         <div style={{ overflowY: "auto", padding: "14px 18px 32px" }}>
-          {entryTrails.length === 0 ? (
+          {segments.length === 0 ? (
             <p style={{ textAlign: "center", color: C.inkLight, padding: "24px 0", fontSize: 13 }}>
               Abhi tak koi byaaj nahi
             </p>
           ) : (
-            entryTrails.map((et, ei) => (
-              <div key={ei} style={{ marginBottom: 20 }}>
-                {/* Entry header */}
-                <div style={{ background: C.cream, borderRadius: "10px 10px 0 0",
-                  padding: "10px 14px", borderBottom: `2px solid ${C.saffron}` }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div>
-                      <p style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>
-                        {et.entry.narration}
-                      </p>
-                      <p style={{ fontSize: 11, color: C.inkLight, marginTop: 2 }}>
-                        {fmtDate(et.entry.date)} · ₹{fmt(et.entry.amount)} @ {annualRate}%/saal
-                      </p>
-                      <p style={{ fontSize: 10, color: C.saffron, marginTop: 2 }}>
-                        Byaaj shuru: {fmtDate(new Date(new Date(et.entry.date).getTime() + 86400000))}
-                        {" "}(pehla din choda)
+            segments.map((seg, i) => {
+              if (seg.isEvent) {
+                // Balance change event (new loan added or payment received)
+                const isLoan = seg.eventType === "loan";
+                return (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10,
+                    margin: "8px 0", padding: "8px 14px",
+                    background: isLoan ? "#FDF0EE" : C.greenLight,
+                    borderRadius: 10,
+                    border: `1px solid ${isLoan ? C.red : C.green}` }}>
+                    <span style={{ fontSize: 16 }}>{isLoan ? "💵" : "💳"}</span>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: 12, fontWeight: 700,
+                        color: isLoan ? C.red : C.green }}>
+                        {seg.eventLabel}
                       </p>
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <p style={{ fontSize: 11, color: C.inkLight }}>Kul byaaj</p>
-                      <p style={{ fontFamily: "'Baloo 2'", fontWeight: 800, fontSize: 16, color: C.red }}>
-                        +₹{fmt(et.totalInterest)}
+                      <p style={{ fontSize: 10, color: C.inkLight }}>
+                        {isLoan ? "Naya balance" : "Balance"}
+                      </p>
+                      <p style={{ fontFamily: "'Baloo 2'", fontWeight: 700, fontSize: 13, color: C.ink }}>
+                        ₹{fmt(seg.balanceAfter)}
                       </p>
                     </div>
                   </div>
-                </div>
+                );
+              }
 
-                {/* Segments */}
-                <div style={{ border: `1px solid ${C.border}`, borderTop: "none",
-                  borderRadius: "0 0 10px 10px", overflow: "hidden" }}>
-                  {et.segments.map((seg, si) => (
-                    <div key={si}>
-                      {seg.isCompounding ? (
-                        <div style={{ display: "flex", alignItems: "center", gap: 10,
-                          padding: "8px 14px", background: C.goldLight,
-                          borderTop: `1px solid ${C.border}` }}>
-                          <span style={{ fontSize: 14 }}>🔄</span>
-                          <div style={{ flex: 1 }}>
-                            <p style={{ fontSize: 11, fontWeight: 700, color: C.gold }}>
-                              1 April — Compound hua
-                            </p>
-                            <p style={{ fontSize: 10, color: C.inkMid }}>
-                              +₹{fmt(seg.addedInterest)} principal mein joda
-                            </p>
-                          </div>
-                          <div style={{ textAlign: "right" }}>
-                            <p style={{ fontSize: 10, color: C.inkLight }}>Naya principal</p>
-                            <p style={{ fontFamily: "'Baloo 2'", fontWeight: 700, fontSize: 12 }}>
-                              ₹{fmt(seg.newPrincipal)}
-                            </p>
-                          </div>
-                        </div>
-                      ) : (
-                        <div style={{ display: "flex", justifyContent: "space-between",
-                          alignItems: "center", padding: "10px 14px",
-                          borderTop: si > 0 ? `1px solid ${C.border}` : "none",
-                          background: C.white }}>
-                          <div>
-                            <p style={{ fontSize: 12, color: C.ink, fontWeight: 500 }}>
-                              {fmtDate(seg.fromDate)} → {fmtDate(seg.toDate)}
-                            </p>
-                            <p style={{ fontSize: 11, color: C.inkLight, marginTop: 2 }}>
-                              ₹{fmt(seg.principal)} × {annualRate}% × {seg.days} din / {mode}
-                            </p>
-                          </div>
-                          <p style={{ fontFamily: "'Baloo 2'", fontWeight: 700,
-                            fontSize: 14, color: C.red, flexShrink: 0 }}>
-                            +₹{fmt(seg.interest)}
-                          </p>
-                        </div>
-                      )}
+              if (seg.isCompounding) {
+                return (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10,
+                    margin: "8px 0", padding: "8px 14px",
+                    background: C.goldLight, borderRadius: 10,
+                    border: `1px solid ${C.gold}` }}>
+                    <span style={{ fontSize: 16 }}>🔄</span>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: 12, fontWeight: 700, color: C.gold }}>
+                        1 April — Byaaj compound hua
+                      </p>
+                      <p style={{ fontSize: 11, color: C.inkMid, marginTop: 2 }}>
+                        +₹{fmt(seg.addedInterest)} principal mein joda
+                      </p>
                     </div>
-                  ))}
+                    <div style={{ textAlign: "right" }}>
+                      <p style={{ fontSize: 10, color: C.inkLight }}>Naya principal</p>
+                      <p style={{ fontFamily: "'Baloo 2'", fontWeight: 700, fontSize: 13, color: C.ink }}>
+                        ₹{fmt(seg.newPrincipal)}
+                      </p>
+                    </div>
+                  </div>
+                );
+              }
+
+              // Regular interest segment
+              return (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between",
+                  alignItems: "center", padding: "10px 0",
+                  borderBottom: `1px solid ${C.border}` }}>
+                  <div>
+                    <p style={{ fontSize: 12, color: C.ink, fontWeight: 500 }}>
+                      {fmtDate(seg.fromDate)} → {fmtDate(seg.toDate)}
+                    </p>
+                    <p style={{ fontSize: 11, color: C.inkLight, marginTop: 2 }}>
+                      ₹{fmt(seg.principal)} × {annualRate}% × {seg.days} din / {mode}
+                    </p>
+                  </div>
+                  <p style={{ fontFamily: "'Baloo 2'", fontWeight: 700,
+                    fontSize: 14, color: C.red, flexShrink: 0, marginLeft: 12 }}>
+                    +₹{fmt(seg.interest)}
+                  </p>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
 
           {/* Grand total */}
-          {entryTrails.length > 0 && (
-            <div style={{ padding: "14px", background: C.cream,
+          {segments.length > 0 && (
+            <div style={{ marginTop: 16, padding: "14px", background: C.cream,
               borderRadius: 12, border: `1px solid ${C.border}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                 <span style={{ fontSize: 13, color: C.inkMid }}>Principal (Original)</span>
@@ -438,7 +432,7 @@ function ByaajTrailPopover({ party, entryTrails, accruedInterest, mode, onModeCh
                 </span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                <span style={{ fontSize: 13, color: C.inkMid }}>Kul Byaaj ({mode} din system)</span>
+                <span style={{ fontSize: 13, color: C.inkMid }}>Kul Byaaj ({mode} din)</span>
                 <span style={{ fontFamily: "'Baloo 2'", fontWeight: 700, fontSize: 13, color: C.red }}>
                   +₹{fmt(totalInterest)}
                 </span>
