@@ -2,19 +2,29 @@ import { useState } from "react";
 import { useApp } from "../context/AppContext";
 import { Shell, C, Card, TopBar, Btn, Field } from "../components/ui";
 
-export default function NewParty({ onBack }) {
+// NewParty supports both CREATE and EDIT mode.
+// editData prop: if passed, pre-fills form and updates existing party.
+export default function NewParty({ onBack, editData }) {
   const { saveParty } = useApp();
-  const [busy, setBusy] = useState(false);
+  const isEdit = !!editData;
+
+  const [busy, setBusy]   = useState(false);
   const [error, setError] = useState("");
   const [f, setF] = useState({
-    name: "", type: "Farmer", place: "", phone: "",
-    gstin: "", state: "Haryana",
-    opening_balance: "", opening_balance_date: "", interest_rate: "",
-    // Bank fields
-    bank_name: "", account_number: "", ifsc: "",
-    // Expense fields
-    expense_category: "",
-    notes: "",
+    name:                 editData?.name               || "",
+    type:                 editData?.type               || "Farmer",
+    place:                editData?.place              || "",
+    phone:                editData?.phone              || "",
+    gstin:                editData?.gstin              || "",
+    state:                editData?.state              || "Haryana",
+    opening_balance:      editData?.opening_balance !== undefined ? String(editData.opening_balance) : "",
+    opening_balance_date: editData?.opening_balance_date || "",
+    interest_rate:        editData?.interest_rate !== undefined ? String(editData.interest_rate) : "",
+    bank_name:            editData?.bank_name          || "",
+    account_number:       editData?.account_number     || "",
+    ifsc:                 editData?.ifsc               || "",
+    expense_category:     editData?.expense_category   || "",
+    notes:                editData?.notes              || "",
   });
   const s = (k, v) => setF(p => ({ ...p, [k]: v }));
 
@@ -23,13 +33,17 @@ export default function NewParty({ onBack }) {
     setBusy(true);
     setError("");
     try {
-      await saveParty({
-        ...f,
-        name: f.name.trim(),
-        opening_balance: parseFloat(f.opening_balance) || 0,
-        interest_rate: parseFloat(f.interest_rate) || 0,
-        created_at: new Date().toISOString(),
-      });
+      await saveParty(
+        {
+          ...f,
+          name:            f.name.trim(),
+          opening_balance: parseFloat(f.opening_balance) || 0,
+          interest_rate:   parseFloat(f.interest_rate)   || 0,
+          created_at:      editData?.created_at || new Date().toISOString(),
+          updated_at:      new Date().toISOString(),
+        },
+        isEdit ? editData.id : null  // pass id for update, null for create
+      );
       onBack();
     } catch (e) {
       setError(e.message);
@@ -37,22 +51,23 @@ export default function NewParty({ onBack }) {
     }
   };
 
-  const isFarmer   = f.type === "Farmer";
-  const isBuyer    = f.type === "Customer";
-  const isBank     = f.type === "Bank";
-  const isExpense  = f.type === "Expense";
+  const isFarmer  = f.type === "Farmer";
+  const isBuyer   = f.type === "Customer";
+  const isBank    = f.type === "Bank";
+  const isExpense = f.type === "Expense";
 
   return (
     <Shell>
-      <TopBar title="Naya Party Jodein" onBack={onBack} />
+      <TopBar title={isEdit ? "Party Edit Karein" : "Naya Party Jodein"} onBack={onBack} />
       <div style={{ padding: "18px 14px 100px" }}>
         {error && (
-          <div style={{ background: "#FDF0EE", border: `1px solid ${C.red}`, borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 13, color: C.red, fontWeight: 600 }}>
+          <div style={{ background: "#FDF0EE", border: `1px solid ${C.red}`, borderRadius: 10,
+            padding: "10px 14px", marginBottom: 14, fontSize: 13, color: C.red, fontWeight: 600 }}>
             ⚠️ {error}
           </div>
         )}
 
-        {/* Basic info — all types */}
+        {/* Basic info */}
         <Card style={{ marginBottom: 14 }}>
           <Field label="Party ka Naam" value={f.name} onChange={v => s("name", v)}
             placeholder={isBank ? "Jaise: SBI Current Account" : isExpense ? "Jaise: Office Kharcha" : "Poora naam"} required />
@@ -64,22 +79,27 @@ export default function NewParty({ onBack }) {
               { value: "Bank",     label: "🏦 Bank Account" },
             ]} required />
 
-          {/* Farmer & Buyer: place + phone */}
           {(isFarmer || isBuyer) && (
             <>
               <Field label="Jagah" value={f.place} onChange={v => s("place", v)} placeholder="Shehar / Gaon" />
-              <Field label="Phone" value={f.phone} onChange={v => s("phone", v)} type="tel" placeholder="Mobile number" />
+              <Field
+                label="Phone"
+                value={f.phone}
+                onChange={v => s("phone", v)}
+                type="tel"
+                placeholder="10-digit mobile number"
+                hint="WhatsApp par bill bhejne ke liye zaroori hai"
+              />
             </>
           )}
 
-          {/* Expense: category */}
           {isExpense && (
             <Field label="Category" value={f.expense_category} onChange={v => s("expense_category", v)}
               options={["Dalali","Mazdoori","Office","Labour","Transport","Misc"]} />
           )}
         </Card>
 
-        {/* Farmer / Buyer extra fields */}
+        {/* Farmer / Buyer extra */}
         {(isFarmer || isBuyer) && (
           <Card style={{ marginBottom: 14 }}>
             <Field label="GSTIN" value={f.gstin} onChange={v => s("gstin", v)} placeholder="15 digit (agar ho toh)" />
@@ -99,10 +119,8 @@ export default function NewParty({ onBack }) {
                 onChange={v => s("opening_balance_date", v)} type="date"
                 hint="Byaaj is tarikh se shuru hoga" />
             )}
-            {(isFarmer || isBuyer) && (
-              <Field label="Byaaj dar" value={f.interest_rate} onChange={v => s("interest_rate", v)}
-                type="number" suffix="% / saal" placeholder="0" />
-            )}
+            <Field label="Byaaj dar" value={f.interest_rate} onChange={v => s("interest_rate", v)}
+              type="number" suffix="% / saal" placeholder="0" />
           </Card>
         )}
 
@@ -117,14 +135,14 @@ export default function NewParty({ onBack }) {
           </Card>
         )}
 
-        {/* Notes — all types */}
+        {/* Notes */}
         <Card style={{ marginBottom: 14 }}>
           <Field label="Notes" value={f.notes} onChange={v => s("notes", v)}
             placeholder="Jaankari (optional)" rows={2} />
         </Card>
 
         <Btn variant="green" onClick={handleSave} disabled={busy || !f.name.trim()}>
-          {busy ? "Save ho raha hai..." : "✓ Party Save Karein"}
+          {busy ? "Save ho raha hai..." : isEdit ? "✓ Update Karein" : "✓ Party Save Karein"}
         </Btn>
         <Btn variant="ghost" onClick={onBack} style={{ marginTop: 8 }}>Raddh Karein</Btn>
       </div>
