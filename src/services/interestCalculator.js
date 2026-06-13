@@ -124,18 +124,19 @@ export function buildPartyInterestTrail(party, partyLedger, today = new Date(), 
   if (events.length === 0) return { segments: [], totalInterest: 0 };
 
   // Sort events by date
-  events.sort((a, b) => a.date - b.date);
+  events.sort((a, b) => new Date(a.date) - new Date(b.date));
+  events.forEach(e => { e.date = new Date(e.date); });
 
   const firstDate = events[0].date;
 
   // Add 1st April compounding points
-  const apr1Dates = getApril1Dates(firstDate, today);
+  const apr1Dates = getApril1Dates(new Date(firstDate), new Date(today));
 
   // Merge all checkpoints: events + apr1 dates + today
   const allCheckpoints = [
-    ...events.map(e => ({ date: e.date, event: e })),
-    ...apr1Dates.map(d => ({ date: d, isCompound: true })),
-    { date: today, isEnd: true },
+    ...events.map(e => ({ date: new Date(e.date), event: e })),
+    ...apr1Dates.map(d => ({ date: new Date(d), isCompound: true })),
+    { date: new Date(today), isEnd: true },
   ].sort((a, b) => a.date - b.date);
 
   // ── Process timeline ───────────────────────────────────────────────────────
