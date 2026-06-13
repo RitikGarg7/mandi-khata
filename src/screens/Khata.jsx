@@ -282,13 +282,25 @@ export default function Khata({ party, onBack }) {
 // ── Byaaj Trail Popover ───────────────────────────────────────────────────────
 
 function ByaajTrailPopover({ party, entryTrails: segments, accruedInterest, mode, onModeChange, onClose }) {
-  const annualRate  = party.interest_rate || 0;
+  const annualRate    = party.interest_rate || 0;
   const totalInterest = segments
     .filter(s => !s.isCompounding && !s.isEvent)
     .reduce((sum, s) => sum + (s.interest || 0), 0);
 
   const fmtDate = (d) => new Date(d).toLocaleDateString("en-IN",
     { day: "numeric", month: "short", year: "numeric" });
+
+  // Dot styles for timeline
+  const bigDot  = (color) => ({
+    position: "absolute", left: -17, top: 4,
+    width: 10, height: 10, borderRadius: "50%",
+    background: color, border: `2px solid ${C.white}`,
+  });
+  const smallDot = {
+    position: "absolute", left: -14, top: 6,
+    width: 4, height: 4, borderRadius: "50%",
+    background: C.border,
+  };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
@@ -300,147 +312,167 @@ function ByaajTrailPopover({ party, entryTrails: segments, accruedInterest, mode
 
         {/* Handle */}
         <div style={{ padding: "12px 0 4px", textAlign: "center", flexShrink: 0 }}>
-          <div style={{ width: 40, height: 4, borderRadius: 2, background: C.border, margin: "0 auto" }} />
+          <div style={{ width: 40, height: 4, borderRadius: 2,
+            background: C.border, margin: "0 auto" }} />
         </div>
 
         {/* Header */}
-        <div style={{ padding: "8px 18px 12px", borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+        <div style={{ padding: "8px 20px 14px",
+          borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div>
-              <p style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Baloo 2'", color: C.ink }}>
-                📈 Byaaj Trail
+              <p style={{ fontSize: 15, fontWeight: 700, color: C.ink, margin: 0 }}>
+                Byaaj Trail
               </p>
-              <p style={{ fontSize: 12, color: C.inkLight, marginTop: 2 }}>
-                {party.name} · {annualRate}% / saal · {(annualRate/12).toFixed(2)}% / mahina
+              <p style={{ fontSize: 12, color: C.inkLight, margin: "4px 0 10px" }}>
+                {party.name} · {annualRate}% / saal
               </p>
               {/* 360 / 365 toggle */}
-              <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 {["365", "360"].map(m => (
                   <button key={m} onClick={() => onModeChange(m)}
-                    style={{ padding: "4px 14px", borderRadius: 20, fontSize: 12,
-                      fontWeight: 700, cursor: "pointer", border: "none",
+                    style={{ padding: "3px 12px", borderRadius: 20, fontSize: 12,
+                      fontWeight: 600, cursor: "pointer", border: "none",
                       background: mode === m ? C.saffron : C.cream,
                       color:      mode === m ? C.white   : C.inkMid }}>
                     {m} din
                   </button>
                 ))}
                 <span style={{ fontSize: 11, color: C.inkLight }}>
-                  {mode === "365" ? "Exact calendar days" : "Har mahina = 30 din"}
+                  {mode === "365" ? "Exact calendar" : "Har mahina = 30 din"}
                 </span>
               </div>
             </div>
             <div style={{ textAlign: "right", flexShrink: 0 }}>
-              <p style={{ fontSize: 11, color: C.inkLight }}>Kul Byaaj</p>
-              <p style={{ fontFamily: "'Baloo 2'", fontWeight: 800, fontSize: 22, color: C.red }}>
+              <p style={{ fontSize: 11, color: C.inkLight, margin: 0 }}>Kul Byaaj</p>
+              <p style={{ fontFamily: "'Baloo 2'", fontWeight: 800,
+                fontSize: 22, color: C.red, margin: "2px 0 0" }}>
                 ₹{fmt(totalInterest)}
               </p>
             </div>
           </div>
         </div>
 
-        {/* Segments */}
-        <div style={{ overflowY: "auto", padding: "14px 18px 32px" }}>
+        {/* Timeline */}
+        <div style={{ overflowY: "auto", padding: "20px 20px 32px" }}>
           {segments.length === 0 ? (
-            <p style={{ textAlign: "center", color: C.inkLight, padding: "24px 0", fontSize: 13 }}>
+            <p style={{ textAlign: "center", color: C.inkLight,
+              padding: "24px 0", fontSize: 13 }}>
               Abhi tak koi byaaj nahi
             </p>
           ) : (
-            segments.map((seg, i) => {
-              if (seg.isEvent) {
-                // Balance change event (new loan added or payment received)
-                const isLoan = seg.eventType === "loan";
-                return (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10,
-                    margin: "8px 0", padding: "8px 14px",
-                    background: isLoan ? "#FDF0EE" : C.greenLight,
-                    borderRadius: 10,
-                    border: `1px solid ${isLoan ? C.red : C.green}` }}>
-                    <span style={{ fontSize: 16 }}>{isLoan ? "💵" : "💳"}</span>
-                    <div style={{ flex: 1 }}>
-                      <p style={{ fontSize: 12, fontWeight: 700,
-                        color: isLoan ? C.red : C.green }}>
+            <div style={{ position: "relative", paddingLeft: 20 }}>
+              {/* Vertical line */}
+              <div style={{ position: "absolute", left: 6, top: 8, bottom: 8,
+                width: 1.5, background: C.border }} />
+
+              {segments.map((seg, i) => {
+                if (seg.isEvent) {
+                  const isLoan = seg.eventType === "loan";
+                  return (
+                    <div key={i} style={{ position: "relative", marginBottom: 20 }}>
+                      <div style={bigDot(isLoan ? C.red : C.green)} />
+                      <p style={{ fontSize: 11, color: C.inkLight, margin: "0 0 2px" }}>
+                        {fmtDate(seg.fromDate)}
+                      </p>
+                      <p style={{ fontSize: 13, fontWeight: 600,
+                        color: C.ink, margin: 0 }}>
                         {seg.eventLabel}
                       </p>
+                      {isLoan && (
+                        <p style={{ fontSize: 11, color: C.inkLight, margin: "2px 0 0" }}>
+                          Byaaj agla din se shuru
+                        </p>
+                      )}
                     </div>
-                    <div style={{ textAlign: "right" }}>
-                      <p style={{ fontSize: 10, color: C.inkLight }}>
-                        {isLoan ? "Naya balance" : "Balance"}
-                      </p>
-                      <p style={{ fontFamily: "'Baloo 2'", fontWeight: 700, fontSize: 13, color: C.ink }}>
-                        ₹{fmt(seg.balanceAfter)}
-                      </p>
-                    </div>
-                  </div>
-                );
-              }
+                  );
+                }
 
-              if (seg.isCompounding) {
+                if (seg.isCompounding) {
+                  return (
+                    <div key={i} style={{ position: "relative", marginBottom: 20 }}>
+                      <div style={bigDot("#EF9F27")} />
+                      <p style={{ fontSize: 11, color: C.inkLight, margin: "0 0 2px" }}>
+                        {fmtDate(seg.fromDate)}
+                      </p>
+                      <div style={{ display: "flex", justifyContent: "space-between",
+                        alignItems: "center" }}>
+                        <p style={{ fontSize: 13, fontWeight: 600,
+                          color: "#BA7517", margin: 0 }}>
+                          Compound hua
+                        </p>
+                        <p style={{ fontSize: 12, color: C.inkMid, margin: 0 }}>
+                          Naya: ₹{fmt(seg.newPrincipal)}
+                        </p>
+                      </div>
+                      <p style={{ fontSize: 11, color: C.inkLight, margin: "2px 0 0" }}>
+                        ₹{fmt(seg.addedInterest)} byaaj principal mein joda
+                      </p>
+                    </div>
+                  );
+                }
+
+                // Interest period
                 return (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10,
-                    margin: "8px 0", padding: "8px 14px",
-                    background: C.goldLight, borderRadius: 10,
-                    border: `1px solid ${C.gold}` }}>
-                    <span style={{ fontSize: 16 }}>🔄</span>
-                    <div style={{ flex: 1 }}>
-                      <p style={{ fontSize: 12, fontWeight: 700, color: C.gold }}>
-                        1 April — Byaaj compound hua
-                      </p>
-                      <p style={{ fontSize: 11, color: C.inkMid, marginTop: 2 }}>
-                        +₹{fmt(seg.addedInterest)} principal mein joda
-                      </p>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <p style={{ fontSize: 10, color: C.inkLight }}>Naya principal</p>
-                      <p style={{ fontFamily: "'Baloo 2'", fontWeight: 700, fontSize: 13, color: C.ink }}>
-                        ₹{fmt(seg.newPrincipal)}
+                  <div key={i} style={{ position: "relative", marginBottom: 20 }}>
+                    <div style={smallDot} />
+                    <div style={{ display: "flex", justifyContent: "space-between",
+                      alignItems: "flex-start" }}>
+                      <div>
+                        <p style={{ fontSize: 12, color: C.inkMid, margin: 0 }}>
+                          {fmtDate(seg.fromDate)} → {fmtDate(seg.toDate)}
+                        </p>
+                        <p style={{ fontSize: 11, color: C.inkLight, margin: "2px 0 0" }}>
+                          ₹{fmt(seg.principal)} × {annualRate}% × {seg.days} din / {mode}
+                        </p>
+                      </div>
+                      <p style={{ fontFamily: "'Baloo 2'", fontWeight: 700,
+                        fontSize: 14, color: C.red, margin: 0,
+                        flexShrink: 0, marginLeft: 12 }}>
+                        +₹{fmt(seg.interest)}
                       </p>
                     </div>
                   </div>
                 );
-              }
+              })}
 
-              // Regular interest segment
-              return (
-                <div key={i} style={{ display: "flex", justifyContent: "space-between",
-                  alignItems: "center", padding: "10px 0",
-                  borderBottom: `1px solid ${C.border}` }}>
-                  <div>
-                    <p style={{ fontSize: 12, color: C.ink, fontWeight: 500 }}>
-                      {fmtDate(seg.fromDate)} → {fmtDate(seg.toDate)}
-                    </p>
-                    <p style={{ fontSize: 11, color: C.inkLight, marginTop: 2 }}>
-                      ₹{fmt(seg.principal)} × {annualRate}% × {seg.days} din / {mode}
-                    </p>
-                  </div>
-                  <p style={{ fontFamily: "'Baloo 2'", fontWeight: 700,
-                    fontSize: 14, color: C.red, flexShrink: 0, marginLeft: 12 }}>
-                    +₹{fmt(seg.interest)}
-                  </p>
-                </div>
-              );
-            })
+              {/* End dot */}
+              <div style={{ position: "relative" }}>
+                <div style={bigDot(C.inkMid)} />
+                <p style={{ fontSize: 11, color: C.inkLight, margin: "0 0 2px" }}>Aaj</p>
+                <p style={{ fontSize: 13, fontWeight: 600, color: C.ink, margin: 0 }}>
+                  Kul Baaki
+                </p>
+              </div>
+            </div>
           )}
 
-          {/* Grand total */}
+          {/* Summary */}
           {segments.length > 0 && (
-            <div style={{ marginTop: 16, padding: "14px", background: C.cream,
-              borderRadius: 12, border: `1px solid ${C.border}` }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                <span style={{ fontSize: 13, color: C.inkMid }}>Principal (Original)</span>
-                <span style={{ fontFamily: "'Baloo 2'", fontWeight: 600, fontSize: 13 }}>
+            <div style={{ marginTop: 20, borderTop: `1px solid ${C.border}`,
+              paddingTop: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between",
+                marginBottom: 6 }}>
+                <span style={{ fontSize: 13, color: C.inkLight }}>Principal</span>
+                <span style={{ fontSize: 13, color: C.ink }}>
                   ₹{fmt(party.opening_balance)}
                 </span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                <span style={{ fontSize: 13, color: C.inkMid }}>Kul Byaaj ({mode} din)</span>
-                <span style={{ fontFamily: "'Baloo 2'", fontWeight: 700, fontSize: 13, color: C.red }}>
+              <div style={{ display: "flex", justifyContent: "space-between",
+                marginBottom: 10 }}>
+                <span style={{ fontSize: 13, color: C.inkLight }}>
+                  Kul Byaaj ({mode} din)
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: C.red }}>
                   +₹{fmt(totalInterest)}
                 </span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between",
-                paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
-                <span style={{ fontSize: 14, fontWeight: 700 }}>Kul Baaki</span>
-                <span style={{ fontFamily: "'Baloo 2'", fontWeight: 800, fontSize: 18, color: C.red }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 15, fontWeight: 700, color: C.ink }}>
+                  Kul Baaki
+                </span>
+                <span style={{ fontFamily: "'Baloo 2'", fontWeight: 800,
+                  fontSize: 16, color: C.red }}>
                   ₹{fmt(parseFloat(party.opening_balance || 0) + totalInterest)}
                 </span>
               </div>
