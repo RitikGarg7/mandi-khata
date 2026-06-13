@@ -289,14 +289,6 @@ function ByaajTrailPopover({ party, entryTrails: segments, accruedInterest, mode
 
   const fmtDate = (d) => new Date(d).toLocaleDateString("en-IN",
     { day: "numeric", month: "short", year: "numeric" });
-  // Subtract 1 day for display — end date is exclusive in calculation
-  // e.g. period ends "1 Apr" displays as "31 Mar" (inclusive)
-  const fmtEndDate = (d) => {
-    const date = new Date(d);
-    date.setDate(date.getDate() - 1);
-    return date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
-  };
-
   // Dot styles for timeline
   const bigDot  = (color) => ({
     position: "absolute", left: -17, top: 4,
@@ -427,7 +419,7 @@ function ByaajTrailPopover({ party, entryTrails: segments, accruedInterest, mode
                       alignItems: "flex-start" }}>
                       <div>
                         <p style={{ fontSize: 12, color: C.inkMid, margin: 0 }}>
-                          {fmtDate(seg.fromDate)} → {fmtEndDate(seg.toDate)}
+                          {fmtDate(seg.fromDate)} → {fmtDate(seg.toDate)}
                         </p>
                         <p style={{ fontSize: 11, color: C.inkLight, margin: "2px 0 0" }}>
                           ₹{fmt(seg.principal)} × {annualRate}% × {seg.days} din / {mode}
