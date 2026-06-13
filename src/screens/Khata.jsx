@@ -363,8 +363,8 @@ function ByaajTrailPopover({ party, entryTrails: segments, accruedInterest, mode
           ) : (
             <div style={{ position: "relative", paddingLeft: 20 }}>
               {/* Vertical line */}
-              <div style={{ position: "absolute", left: 6, top: 8, bottom: 8,
-                width: 1.5, background: C.border }} />
+              <div style={{ position: "absolute", left: 6, top: 8, bottom: 24,
+                width: 2, background: C.border, zIndex: 0 }} />
 
               {segments.map((seg, i) => {
                 if (seg.isEvent) {
@@ -420,7 +420,7 @@ function ByaajTrailPopover({ party, entryTrails: segments, accruedInterest, mode
                       alignItems: "flex-start" }}>
                       <div>
                         <p style={{ fontSize: 12, color: C.inkMid, margin: 0 }}>
-                          {fmtDate(seg.fromDate)} → {fmtDate(seg.toDate)}
+                          {fmtDate(seg.fromDate)} → {fmtEndDate(seg.toDate)}
                         </p>
                         <p style={{ fontSize: 11, color: C.inkLight, margin: "2px 0 0" }}>
                           ₹{fmt(seg.principal)} × {annualRate}% × {seg.days} din / {mode}

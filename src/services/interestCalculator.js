@@ -87,7 +87,8 @@ export function buildPartyInterestTrail(party, partyLedger, today = new Date(), 
     events.push({
       date:          startDate,
       balanceChange: party.opening_balance,
-      label:         `Opening Balance ₹${party.opening_balance.toLocaleString("en-IN")} (loan diya ${obDate})`,
+      label:         `Opening Balance — ₹${party.opening_balance.toLocaleString("en-IN")}`,
+      date:          obDate,
       type:          "loan",
     });
   }
@@ -105,7 +106,7 @@ export function buildPartyInterestTrail(party, partyLedger, today = new Date(), 
       events.push({
         date:          d,
         balanceChange: e.debit,
-        label:         `${e.narration || "Nakad diya"} ₹${e.debit.toLocaleString("en-IN")} (diya ${e.date})`,
+        label:         `${e.narration || "Nakad diya"} — ₹${e.debit.toLocaleString("en-IN")}`,
         type:          "loan",
       });
     } else if (e.credit > 0) {
@@ -113,7 +114,8 @@ export function buildPartyInterestTrail(party, partyLedger, today = new Date(), 
       events.push({
         date:          new Date(e.date),
         balanceChange: -e.credit,
-        label:         `${e.narration || "Payment"} ₹${e.credit.toLocaleString("en-IN")}`,
+        label:         `${e.narration || "Payment"} — ₹${e.credit.toLocaleString("en-IN")}`,
+        amount:        e.credit,
         type:          "payment",
       });
     }
