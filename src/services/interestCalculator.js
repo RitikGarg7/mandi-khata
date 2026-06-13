@@ -29,15 +29,15 @@ function calcInterest(principal, annualRate, days, mode) {
 }
 
 // Always convert to Date object — prevents getMonth errors from string dates
-function toDate(d) {
+function asDate(d) {
   if (!d) return new Date();
   if (d instanceof Date) return new Date(d); // clone
   return new Date(d); // parse string
 }
 
 function getApril1Dates(fromDate, toDate) {
-  const from = toDate(fromDate); // ensure Date object
-  const to   = toDate(toDate);   // ensure Date object
+  const from = asDate(fromDate); // ensure Date object
+  const to   = asDate(toDate);   // ensure Date object
   const dates = [];
   let year = from.getMonth() >= FINANCIAL_YEAR_START.month
     ? from.getFullYear() + 1
@@ -57,7 +57,7 @@ export function buildPartyInterestTrail(party, partyLedger, today = new Date(), 
   const annualRate = party.interest_rate || 0;
   if (annualRate <= 0) return { segments: [], totalInterest: 0 };
 
-  const todayDate = toDate(today);
+  const todayDate = asDate(today);
 
   // ── Build events list ───────────────────────────────────────────────────────
   const events = [];
@@ -68,8 +68,8 @@ export function buildPartyInterestTrail(party, partyLedger, today = new Date(), 
     || todayDate.toISOString().substring(0, 10);
 
   if (party.opening_balance > 0) {
-    const loanDate  = toDate(obDateStr);
-    const startDate = toDate(obDateStr); // clone
+    const loanDate  = asDate(obDateStr);
+    const startDate = asDate(obDateStr); // clone
     startDate.setDate(startDate.getDate() + 1); // day after
 
     events.push({
@@ -89,7 +89,7 @@ export function buildPartyInterestTrail(party, partyLedger, today = new Date(), 
 
     if (e.debit > 0 && e.source_type === "payment") {
       // Nakad dena — interest starts NEXT day
-      const startDate = toDate(e.date);
+      const startDate = asDate(e.date);
       startDate.setDate(startDate.getDate() + 1);
       events.push({
         date:          startDate,
@@ -101,7 +101,7 @@ export function buildPartyInterestTrail(party, partyLedger, today = new Date(), 
     } else if (e.credit > 0) {
       // Payment received — reduces balance on payment day
       events.push({
-        date:          toDate(e.date),
+        date:          asDate(e.date),
         displayDate:   e.date,
         balanceChange: -e.credit,
         label:         `${e.narration || "Payment"} — ₹${e.credit.toLocaleString("en-IN")}`,
@@ -179,7 +179,7 @@ export function buildPartyInterestTrail(party, partyLedger, today = new Date(), 
       balance += cp.event.balanceChange;
       if (!cp.isEnd) {
         segments.push({
-          fromDate:     cp.event.displayDate ? toDate(cp.event.displayDate) : cp.date,
+          fromDate:     cp.event.displayDate ? asDate(cp.event.displayDate) : cp.date,
           toDate:       cp.date,
           days:         0,
           principal:    Math.round(balance * 100) / 100,
