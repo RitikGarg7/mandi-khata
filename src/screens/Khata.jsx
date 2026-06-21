@@ -359,6 +359,10 @@ export default function Khata({ party, onBack }) {
 
 function ByaajTrailPopover({ party, trail, accruedInterest, onClose }) {
   const [showCalc, setShowCalc] = useState(false);
+  const [calcDisplay, setCalcDisplay] = useState("0");
+  const [calcPrev,    setCalcPrev]    = useState(null);
+  const [calcOp,      setCalcOp]      = useState(null);
+  const [calcFresh,   setCalcFresh]   = useState(true);
 
   const totalByaaj = (trail || [])
     .filter(s => s.type === "interest")
@@ -414,6 +418,10 @@ function ByaajTrailPopover({ party, trail, accruedInterest, onClose }) {
         {showCalc && (
           <ByaajCalculator
             onClose={() => setShowCalc(false)}
+            display={calcDisplay} setDisplay={setCalcDisplay}
+            prev={calcPrev}       setPrev={setCalcPrev}
+            op={calcOp}           setOp={setCalcOp}
+            fresh={calcFresh}     setFresh={setCalcFresh}
           />
         )}
 
@@ -505,11 +513,7 @@ function Row({ label, value, valueColor, bold }) {
 
 // ── Byaaj Calculator ──────────────────────────────────────────────────────────
 
-function ByaajCalculator({ onClose }) {
-  const [display, setDisplay] = useState("0");
-  const [prev,    setPrev]    = useState(null);
-  const [op,      setOp]      = useState(null);
-  const [fresh,   setFresh]   = useState(true); // next digit replaces display
+function ByaajCalculator({ onClose, display, setDisplay, prev, setPrev, op, setOp, fresh, setFresh }) {
 
   const MAX_DIGITS = 12;
 
