@@ -8,7 +8,7 @@
 import { useState } from "react";
 import { useApp } from "../context/AppContext";
 import { buildLedgerWithRunningBalance, calcTrueBalance } from "../services/ledgerService";
-import { computeInterest } from "../services/interestCalculator";
+import { buildInterestTrail, computeInterest } from "../services/interestCalculator";
 
 export function useKhata(party) {
   const { parties, payments, ledger, savePayment, deletePayment } = useApp();
@@ -17,7 +17,7 @@ export function useKhata(party) {
   // ── UI state ────────────────────────────────────────────────────────────────
   const [showPay, setShowPay]           = useState(false);
   const [showNakad, setShowNakad]       = useState(false);
-
+  const [showInterest, setShowInterest] = useState(false); // byaaj trail popover
   const [selEntry, setSelEntry]         = useState(null);
   const [pinAction, setPinAction]       = useState(null);
   const [editingPay, setEditingPay]     = useState(null);
@@ -50,7 +50,7 @@ export function useKhata(party) {
     : 0;
 
   // Interest trail for popover
-
+  const interestTrail = party ? buildInterestTrail(party, partyLedger) : [];
 
   // ── Payment handlers ────────────────────────────────────────────────────────
   const handlePaySave = async () => {
@@ -140,12 +140,12 @@ export function useKhata(party) {
     // Data
     bankAccounts, ledgerWithBal,
     bal, displayBal, farmerOwes, arhtiyaOwes,
-    accruedInterest,
+    accruedInterest, interestTrail,
 
     // UI state
     showPay, setShowPay,
     showNakad, setShowNakad,
-
+    showInterest, setShowInterest,
     selEntry, setSelEntry,
     pinAction, setPinAction,
     editingPay,
