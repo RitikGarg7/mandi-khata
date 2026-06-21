@@ -10,12 +10,13 @@
  *   FIREBASE_PRIVATE_KEY
  */
 
-import { initializeApp, getApps, cert } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+// ── Firebase Admin — lazy loaded only for POST requests ──────────────────────
 
-// ── Firebase Admin init ───────────────────────────────────────────────────────
-
-function getDb() {
+let _db = null;
+async function getDb() {
+  if (_db) return _db;
+  const { initializeApp, getApps, cert } = await import("firebase-admin/app");
+  const { getFirestore } = await import("firebase-admin/firestore");
   if (!getApps().length) {
     initializeApp({
       credential: cert({
@@ -25,7 +26,8 @@ function getDb() {
       }),
     });
   }
-  return getFirestore();
+  _db = getFirestore();
+  return _db;
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -93,19 +95,22 @@ async function sendMessage(to, text) {
 
 async function getState(phone) {
   try {
-    const doc = await getDb().collection("wa_sessions").doc(phone).get();
+    const db = await getDb();
+    const doc = await db.collection("wa_sessions").doc(phone).get();
     return doc.exists ? doc.data() : null;
   } catch { return null; }
 }
 
 async function saveState(phone, state) {
-  await getDb().collection("wa_sessions").doc(phone).set({
+  const db = await getDb();
+  await db.collection("wa_sessions").doc(phone).set({
     ...state, updatedAt: new Date().toISOString()
   });
 }
 
 async function saveParty(phone, data) {
-  const ref = getDb().collection("wa_parties").doc(phone).collection("parties").doc();
+  const db = await getDb();
+  const ref = db.collection("wa_parties").doc(phone).collection("parties").doc();
   await ref.set({
     id:                   ref.id,
     name:                 data.naam,
