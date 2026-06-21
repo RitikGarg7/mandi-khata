@@ -1,214 +1,209 @@
 /**
  * services/interestCalculator.js
  *
- * Mandi lending interest calculator.
+ * Interest calculation service for mandi lending.
  *
  * RULES:
- * 1. Single running balance — new loans ADD to existing principal
- * 2. First day EXCLUDED — loan given 1 Jan → interest starts 2 Jan
- * 3. Two modes:
- *    - 365: exact calendar days (Jan=31, Feb=28/29, Mar=31...)
- *    - 360: every month = 30 days (same day count, divisor changes)
- * 4. Compound on 1st April every financial year
- * 5. Interest only when balance > 0 (farmer owes arhtiya)
+ * 1. Rate is monthly (e.g. 1% per month)
+ * 2. Simple interest within a financial year (1 Apr → 31 Mar)
+ * 3. Compound on 1st April every year (principal += accrued interest)
+ * 4. Interest ONLY when balance > 0 (farmer owes arhtiya)
+ * 5. Balance ≤ 0 = arhtiya owes farmer = interest free
+ * 6. Payments reduce PRINCIPAL first, interest recalculates on new principal
+ * 7. Partial months prorated at 30 days/month (mandi convention)
+ *
+ * SIGN CONVENTION (matches trueBalance in AppContext):
+ *   balance > 0 = farmer owes arhtiya → interest accrues
+ *   balance < 0 = arhtiya owes farmer → interest free
  */
 
-import { FINANCIAL_YEAR_START } from "../constants/index.js";
+import { FINANCIAL_YEAR_START, INTEREST_DAYS_IN_MONTH } from "../constants/index.js";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Date helpers ──────────────────────────────────────────────────────────────
 
-function exactDays(fromDate, toDate) {
-  const MS = 1000 * 60 * 60 * 24;
-  return Math.round((toDate - fromDate) / MS);
-}
-
-function calcInterest(principal, annualRate, days, mode) {
-  if (principal <= 0 || annualRate <= 0 || days <= 0) return 0;
-  const divisor = mode === "360" ? 360 : 365;
-  return principal * (annualRate / 100) * (days / divisor);
-}
-
-// Always convert to Date object — prevents getMonth errors from string dates
-function asDate(d) {
-  if (!d) return new Date();
-  if (d instanceof Date) return new Date(d); // clone
-  return new Date(d); // parse string
-}
-
-function getApril1Dates(fromDate, toDate) {
-  const from = asDate(fromDate); // ensure Date object
-  const to   = asDate(toDate);   // ensure Date object
+/**
+ * Get all 1st April dates between two dates (compounding points)
+ */
+function getCompoundingDates(fromDate, toDate) {
   const dates = [];
-  let year = from.getMonth() >= FINANCIAL_YEAR_START.month
-    ? from.getFullYear() + 1
-    : from.getFullYear();
+  let year = fromDate.getMonth() >= FINANCIAL_YEAR_START.month
+    ? fromDate.getFullYear() + 1
+    : fromDate.getFullYear();
+
   while (true) {
     const apr1 = new Date(year, FINANCIAL_YEAR_START.month, FINANCIAL_YEAR_START.day);
-    if (apr1 >= to) break;
-    if (apr1 > from) dates.push(apr1);
+    if (apr1 >= toDate) break;
+    if (apr1 > fromDate) dates.push(apr1);
     year++;
   }
   return dates;
 }
 
-// ── Main trail builder ────────────────────────────────────────────────────────
+/**
+ * Calculate months between two dates using calendar month counting
+ * Partial months prorated at 30 days/month
+ *
+ * e.g. 1 Jan → 13 Apr = 3 months + 12 days = 3 + 12/30 = 3.4 months
+ */
+function monthsBetween(fromDate, toDate) {
+  let years  = toDate.getFullYear() - fromDate.getFullYear();
+  let months = toDate.getMonth()    - fromDate.getMonth();
+  let days   = toDate.getDate()     - fromDate.getDate();
 
-export function buildPartyInterestTrail(party, partyLedger, today = new Date(), mode = "365") {
-  const annualRate = party.interest_rate || 0;
-  if (annualRate <= 0) return { segments: [], totalInterest: 0 };
+  let totalMonths = years * 12 + months;
 
-  const todayDate = asDate(today);
+  if (days < 0) {
+    totalMonths--;
+    days += INTEREST_DAYS_IN_MONTH;
+  }
 
-  // ── Build events list ───────────────────────────────────────────────────────
+  return totalMonths + (days / INTEREST_DAYS_IN_MONTH);
+}
+
+// ── Interest trail builder ────────────────────────────────────────────────────
+
+/**
+ * buildInterestTrail(party, partyLedger, today?)
+ *
+ * Returns a detailed breakdown of how interest accrued over time.
+ * Used by both computeInterest() and the byaaj trail popover.
+ *
+ * Returns array of segments:
+ * [
+ *   {
+ *     fromDate, toDate,
+ *     principal,      // balance during this period
+ *     months,         // duration in months
+ *     interest,       // interest for this segment
+ *     isCompounding,  // true if this is a 1st April compound event
+ *     newPrincipal,   // only on compounding segments
+ *     label,          // human readable description
+ *   }
+ * ]
+ */
+export function buildInterestTrail(party, partyLedger, today = new Date()) {
+  const monthlyRate = party.interest_rate || 0;
+  if (monthlyRate <= 0) return [];
+
+  // Build timeline of all balance-changing events
   const events = [];
 
-  // Opening balance — interest starts day AFTER loan date (first day excluded)
-  const obDateStr = party.opening_balance_date
-    || party.created_at?.substring(0, 10)
-    || todayDate.toISOString().substring(0, 10);
-
-  if (party.opening_balance > 0) {
-    const loanDate  = asDate(obDateStr);
-    const startDate = asDate(obDateStr); // clone
-    startDate.setDate(startDate.getDate() + 1); // day after
-
-    events.push({
-      date:          startDate,           // Date object — interest starts here
-      displayDate:   obDateStr,           // original loan date for display
-      balanceChange: party.opening_balance,
-      label:         `Opening Balance — ₹${party.opening_balance.toLocaleString("en-IN")}`,
-      type:          "loan",
-    });
+  const obDate = party.opening_balance_date || party.created_at?.substring(0, 10);
+  if (party.opening_balance && obDate) {
+    events.push({ date: new Date(obDate), change: party.opening_balance });
   }
 
-  // Ledger entries
   const sorted = [...partyLedger].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
-
   for (const e of sorted) {
     if (!e.date) continue;
-
-    if (e.debit > 0 && e.source_type === "payment") {
-      // Nakad dena — interest starts NEXT day
-      const startDate = asDate(e.date);
-      startDate.setDate(startDate.getDate() + 1);
-      events.push({
-        date:          startDate,
-        displayDate:   e.date,
-        balanceChange: e.debit,
-        label:         `${e.narration || "Nakad diya"} — ₹${e.debit.toLocaleString("en-IN")}`,
-        type:          "loan",
-      });
-    } else if (e.credit > 0) {
-      // Payment received — reduces balance on payment day
-      events.push({
-        date:          asDate(e.date),
-        displayDate:   e.date,
-        balanceChange: -e.credit,
-        label:         `${e.narration || "Payment"} — ₹${e.credit.toLocaleString("en-IN")}`,
-        type:          "payment",
-      });
-    }
+    events.push({ date: new Date(e.date), change: (e.debit || 0) - (e.credit || 0) });
   }
 
-  if (events.length === 0) return { segments: [], totalInterest: 0 };
+  if (events.length === 0) return [];
 
-  // Sort by date — all dates are now guaranteed Date objects
-  events.sort((a, b) => a.date - b.date);
+  // Add 1st April compounding markers
+  const allEvents = [...events];
+  const apr1Dates = getCompoundingDates(events[0].date, today);
+  for (const d of apr1Dates) {
+    allEvents.push({ date: d, change: 0, isCompounding: true });
+  }
+  allEvents.sort((a, b) => a.date - b.date);
 
-  const firstDate = events[0].date;
+  // Build segments
+  const trail = [];
+  let balance                 = 0;
+  let interestSinceCompound   = 0;
+  let prevDate                = null;
 
-  // Get 1st April compounding points
-  const apr1Dates = getApril1Dates(firstDate, todayDate);
+  for (let i = 0; i < allEvents.length; i++) {
+    const event = allEvents[i];
 
-  // Merge all checkpoints
-  const allCheckpoints = [
-    ...events.map(e => ({ date: e.date, event: e })),
-    ...apr1Dates.map(d => ({ date: d, isCompound: true })),
-    { date: todayDate, isEnd: true },
-  ].sort((a, b) => a.date - b.date);
-
-  // ── Process timeline ────────────────────────────────────────────────────────
-  const segments          = [];
-  let balance             = 0;
-  let totalInterest       = 0;
-  let interestSinceCompound = 0;
-  let prevDate            = null;
-
-  for (let i = 0; i < allCheckpoints.length; i++) {
-    const cp = allCheckpoints[i];
-
-    // Interest for period from prevDate → cp.date
     if (prevDate !== null && balance > 0) {
-      const days     = exactDays(prevDate, cp.date);
-      const interest = calcInterest(balance, annualRate, days, mode);
-      if (days > 0) {
-        totalInterest         += interest;
+      const months   = monthsBetween(prevDate, event.date);
+      const interest = months > 0 ? balance * (monthlyRate / 100) * months : 0;
+
+      if (months > 0) {
         interestSinceCompound += interest;
-        segments.push({
-          fromDate:      prevDate,
-          toDate:        cp.date,
-          days,
-          principal:     Math.round(balance * 100) / 100,
-          interest:      Math.round(interest * 100) / 100,
+        trail.push({
+          fromDate:     prevDate,
+          toDate:       event.date,
+          principal:    balance,
+          months:       Math.round(months * 100) / 100,
+          interest:     Math.round(interest * 100) / 100,
           isCompounding: false,
-          isEvent:       false,
+          label:        formatPeriodLabel(prevDate, event.date, months),
         });
       }
     }
 
-    if (cp.isCompound) {
-      // 1 April compound
-      const added = Math.round(interestSinceCompound * 100) / 100;
-      if (added > 0) {
-        balance += interestSinceCompound;
-        segments.push({
-          fromDate:      cp.date,
-          toDate:        cp.date,
-          days:          0,
-          principal:     Math.round((balance - interestSinceCompound) * 100) / 100,
+    if (event.isCompounding) {
+      if (interestSinceCompound > 0) {
+        const newPrincipal = balance + interestSinceCompound;
+        trail.push({
+          fromDate:      event.date,
+          toDate:        event.date,
+          principal:     balance,
+          months:        0,
           interest:      0,
           isCompounding: true,
-          isEvent:       false,
-          addedInterest: added,
-          newPrincipal:  Math.round(balance * 100) / 100,
+          newPrincipal,
+          addedInterest: Math.round(interestSinceCompound * 100) / 100,
+          label:         `🔄 1 April compound — ₹${Math.round(interestSinceCompound)} principal mein joda`,
         });
+        balance = newPrincipal;
         interestSinceCompound = 0;
       }
-    } else if (cp.event) {
-      // Balance change event
-      balance += cp.event.balanceChange;
-      if (!cp.isEnd) {
-        segments.push({
-          fromDate:     cp.event.displayDate ? asDate(cp.event.displayDate) : cp.date,
-          toDate:       cp.date,
-          days:         0,
-          principal:    Math.round(balance * 100) / 100,
-          interest:     0,
-          isCompounding: false,
-          isEvent:      true,
-          eventLabel:   cp.event.label,
-          eventType:    cp.event.type,
-          balanceAfter: Math.round(balance * 100) / 100,
-        });
-      }
+    } else {
+      balance += event.change;
     }
 
-    prevDate = cp.date;
+    prevDate = event.date;
   }
 
-  return {
-    segments,
-    totalInterest: Math.round(totalInterest * 100) / 100,
-  };
+  // Final segment to today
+  if (prevDate !== null && balance > 0) {
+    const months   = monthsBetween(prevDate, today);
+    const interest = months > 0 ? balance * (monthlyRate / 100) * months : 0;
+    if (months > 0) {
+      trail.push({
+        fromDate:     prevDate,
+        toDate:       today,
+        principal:    balance,
+        months:       Math.round(months * 100) / 100,
+        interest:     Math.round(interest * 100) / 100,
+        isCompounding: false,
+        label:        formatPeriodLabel(prevDate, today, months),
+      });
+    }
+  }
+
+  return trail;
 }
 
-export function computeInterest(party, partyLedger, today = new Date(), mode = "365") {
-  if ((party.interest_rate || 0) <= 0) return 0;
-  const { totalInterest } = buildPartyInterestTrail(party, partyLedger, today, mode);
-  return totalInterest;
+/**
+ * computeInterest(party, partyLedger, today?)
+ *
+ * Returns total accrued interest (number).
+ * Uses buildInterestTrail internally.
+ */
+export function computeInterest(party, partyLedger, today = new Date()) {
+  const trail = buildInterestTrail(party, partyLedger, today);
+  return trail
+    .filter(s => !s.isCompounding)
+    .reduce((sum, s) => sum + s.interest, 0);
 }
 
-export function buildInterestTrail(party, partyLedger, today = new Date()) {
-  const { segments } = buildPartyInterestTrail(party, partyLedger, today);
-  return segments;
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function formatPeriodLabel(fromDate, toDate, months) {
+  const from = fromDate.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  const to   = toDate.toLocaleDateString("en-IN",   { day: "numeric", month: "short", year: "numeric" });
+  const fullMonths = Math.floor(months);
+  const days = Math.round((months - fullMonths) * INTEREST_DAYS_IN_MONTH);
+
+  let duration = "";
+  if (fullMonths > 0) duration += `${fullMonths} mahine`;
+  if (days > 0)       duration += `${fullMonths > 0 ? " " : ""}${days} din`;
+
+  return `${from} → ${to} (${duration})`;
 }
