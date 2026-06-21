@@ -413,7 +413,6 @@ function ByaajTrailPopover({ party, trail, accruedInterest, onClose }) {
         {/* Calculator sheet — slides over trail */}
         {showCalc && (
           <ByaajCalculator
-            party={party}
             onClose={() => setShowCalc(false)}
           />
         )}
@@ -506,122 +505,180 @@ function Row({ label, value, valueColor, bold }) {
 
 // ── Byaaj Calculator ──────────────────────────────────────────────────────────
 
-function ByaajCalculator({ party, onClose }) {
-  const [principal, setPrincipal] = useState(String(Math.round(parseFloat(party?.opening_balance) || 0)));
-  const [rate,      setRate]      = useState(String(parseFloat(party?.interest_rate) || 0));
-  const [months,    setMonths]    = useState("1");
-  const [days,      setDays]      = useState("0");
+function ByaajCalculator({ onClose }) {
+  const [display, setDisplay] = useState("0");
+  const [prev,    setPrev]    = useState(null);
+  const [op,      setOp]      = useState(null);
+  const [fresh,   setFresh]   = useState(true); // next digit replaces display
 
-  // Calculate: P × R% × (months + days/30)
-  const p = parseFloat(principal) || 0;
-  const r = parseFloat(rate)      || 0;
-  const m = parseFloat(months)    || 0;
-  const d = parseFloat(days)      || 0;
-  const time    = m + d / 30;
-  const byaaj   = Math.round(p * (r / 100) * time);
+  const MAX_DIGITS = 12;
 
-  const inp = (val, set, placeholder) => (
-    <input
-      value={val}
-      onChange={e => set(e.target.value.replace(/[^0-9.]/g, ""))}
-      placeholder={placeholder}
-      inputMode="decimal"
+  const fmtDisplay = (val) => {
+    const n = parseFloat(val);
+    if (isNaN(n)) return "Error";
+    // show decimals only if present
+    const hasDecimal = val.includes(".");
+    if (hasDecimal) return val; // show raw while typing decimal
+    return n.toLocaleString("en-IN");
+  };
+
+  const pressDigit = (d) => {
+    setDisplay(prev => {
+      if (fresh) { setFresh(false); return d === "." ? "0." : d; }
+      if (d === "." && prev.includes(".")) return prev;
+      if (prev === "0" && d !== ".") return d;
+      if (prev.replace(".", "").replace("-", "").length >= MAX_DIGITS) return prev;
+      return prev + d;
+    });
+  };
+
+  const pressOp = (newOp) => {
+    const cur = parseFloat(display);
+    if (prev !== null && !fresh) {
+      const result = calculate(prev, cur, op);
+      setPrev(result);
+      setDisplay(String(result));
+    } else {
+      setPrev(cur);
+    }
+    setOp(newOp);
+    setFresh(true);
+  };
+
+  const pressEquals = () => {
+    if (op === null || prev === null) return;
+    const cur    = parseFloat(display);
+    const result = calculate(prev, cur, op);
+    setDisplay(String(result));
+    setPrev(null);
+    setOp(null);
+    setFresh(true);
+  };
+
+  const calculate = (a, b, operation) => {
+    let r;
+    if (operation === "+") r = a + b;
+    else if (operation === "−") r = a - b;
+    else if (operation === "×") r = a * b;
+    else if (operation === "÷") r = b !== 0 ? a / b : 0;
+    else return b;
+    // round to avoid floating point noise
+    return Math.round(r * 1e8) / 1e8;
+  };
+
+  const pressClear = () => {
+    setDisplay("0"); setPrev(null); setOp(null); setFresh(true);
+  };
+
+  const pressPlusMinus = () => {
+    setDisplay(d => String(parseFloat(d) * -1));
+  };
+
+  const pressPercent = () => {
+    setDisplay(d => String(parseFloat(d) / 100));
+    setFresh(true);
+  };
+
+  const pressBackspace = () => {
+    setDisplay(d => {
+      if (fresh || d.length <= 1) return "0";
+      const next = d.slice(0, -1);
+      return next === "-" || next === "" ? "0" : next;
+    });
+    setFresh(false);
+  };
+
+  // Button colors — iPhone style
+  const CLR = { func: "#A5A5A5", op: "#FF9500", num: "#333333", zero: "#333333" };
+  const TXT = { func: "#000", op: "#fff", num: "#fff" };
+
+  const Btn2 = ({ label, type = "num", wide = false, onPress }) => (
+    <button
+      onPointerDown={e => { e.preventDefault(); onPress(); }}
       style={{
-        width: "100%", padding: "12px 14px", fontSize: 18,
-        fontFamily: "'Baloo 2'", fontWeight: 700, color: C.ink,
-        background: "#F5F5F5", border: `2px solid ${C.border}`,
-        borderRadius: 12, outline: "none", boxSizing: "border-box",
-        textAlign: "right",
-      }}
-    />
+        gridColumn: wide ? "span 2" : "span 1",
+        background: type === "op" && op === label ? "#fff" : CLR[type],
+        color: type === "op" && op === label ? CLR.op : TXT[type],
+        border: "none", borderRadius: "50%",
+        fontSize: wide ? 30 : 28,
+        fontWeight: 400,
+        fontFamily: "-apple-system, 'SF Pro Display', sans-serif",
+        cursor: "pointer",
+        display: "flex", alignItems: "center", justifyContent: wide ? "flex-start" : "center",
+        paddingLeft: wide ? 28 : 0,
+        aspectRatio: wide ? "auto" : "1",
+        height: wide ? undefined : "100%",
+        width: "100%",
+        WebkitTapHighlightColor: "transparent",
+        userSelect: "none",
+        transition: "filter 0.1s",
+        boxSizing: "border-box",
+      }}>
+      {label}
+    </button>
   );
 
-  return (
-    <div style={{ position: "absolute", inset: 0, background: C.white,
-      borderRadius: "20px 20px 0 0", display: "flex", flexDirection: "column",
-      zIndex: 10 }}>
+  const displayVal = fmtDisplay(display);
+  const fontSize = displayVal.length > 9 ? 36 : displayVal.length > 6 ? 44 : 56;
 
-      {/* Header */}
-      <div style={{ padding: "16px 20px 12px", borderBottom: `1px solid ${C.border}`,
-        display: "flex", alignItems: "center", gap: 12 }}>
+  return (
+    <div style={{ position: "absolute", inset: 0, background: "#000",
+      borderRadius: "20px 20px 0 0", display: "flex", flexDirection: "column",
+      zIndex: 10, overflow: "hidden" }}>
+
+      {/* Back button */}
+      <div style={{ padding: "14px 18px 0", display: "flex", alignItems: "center", gap: 10 }}>
         <button onClick={onClose}
-          style={{ background: "#F0F0F0", border: "none", borderRadius: "50%",
-            width: 34, height: 34, fontSize: 18, cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center" }}>
-          ←
+          style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 20,
+            padding: "6px 14px", color: "#fff", fontSize: 14, cursor: "pointer",
+            display: "flex", alignItems: "center", gap: 6 }}>
+          ← Wapas
         </button>
-        <div>
-          <p style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Baloo 2'", color: C.ink }}>
-            🧮 Byaaj Calculator
-          </p>
-          <p style={{ fontSize: 11, color: C.inkLight }}>
-            Apne hisaab se check karein
-          </p>
-        </div>
       </div>
 
-      {/* Inputs */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "20px 20px 0" }}>
+      {/* Display */}
+      <div style={{ flex: 1, display: "flex", alignItems: "flex-end",
+        justifyContent: "flex-end", padding: "0 24px 16px" }}>
+        <p style={{
+          fontFamily: "-apple-system, 'SF Pro Display', sans-serif",
+          fontWeight: 200, fontSize, color: "#fff",
+          letterSpacing: -2, lineHeight: 1, wordBreak: "break-all", textAlign: "right"
+        }}>
+          {displayVal}
+        </p>
+      </div>
 
-        <Label>Udhaar (₹)</Label>
-        {inp(principal, setPrincipal, "0")}
+      {/* Buttons grid */}
+      <div style={{
+        display: "grid", gridTemplateColumns: "repeat(4, 1fr)",
+        gap: 12, padding: "0 16px 32px",
+        gridAutoRows: "calc((100vw - 32px - 36px) / 4)",
+      }}>
+        <Btn2 label="AC"  type="func"  onPress={pressClear} />
+        <Btn2 label="+/-" type="func"  onPress={pressPlusMinus} />
+        <Btn2 label="%"   type="func"  onPress={pressPercent} />
+        <Btn2 label="÷"   type="op"    onPress={() => pressOp("÷")} />
 
-        <Label top={16}>Byaaj dar (% per mahina)</Label>
-        {inp(rate, setRate, "0")}
+        <Btn2 label="7"   onPress={() => pressDigit("7")} />
+        <Btn2 label="8"   onPress={() => pressDigit("8")} />
+        <Btn2 label="9"   onPress={() => pressDigit("9")} />
+        <Btn2 label="×"   type="op"    onPress={() => pressOp("×")} />
 
-        <Label top={16}>Samay</Label>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <div>
-            <p style={{ fontSize: 11, color: C.inkLight, marginBottom: 4 }}>Mahine</p>
-            {inp(months, setMonths, "0")}
-          </div>
-          <div>
-            <p style={{ fontSize: 11, color: C.inkLight, marginBottom: 4 }}>Din</p>
-            {inp(days, setDays, "0")}
-          </div>
-        </div>
+        <Btn2 label="4"   onPress={() => pressDigit("4")} />
+        <Btn2 label="5"   onPress={() => pressDigit("5")} />
+        <Btn2 label="6"   onPress={() => pressDigit("6")} />
+        <Btn2 label="−"   type="op"    onPress={() => pressOp("−")} />
 
-        {/* Formula shown simply */}
-        <div style={{ marginTop: 20, padding: "10px 14px", background: "#F5F5F5",
-          borderRadius: 10 }}>
-          <p style={{ fontSize: 12, color: C.inkLight, textAlign: "center" }}>
-            ₹{fmt(p)} × {r}% × {time.toFixed(2)} mahine
-          </p>
-        </div>
+        <Btn2 label="1"   onPress={() => pressDigit("1")} />
+        <Btn2 label="2"   onPress={() => pressDigit("2")} />
+        <Btn2 label="3"   onPress={() => pressDigit("3")} />
+        <Btn2 label="+"   type="op"    onPress={() => pressOp("+")} />
 
-        {/* Big result */}
-        <div style={{ marginTop: 16, padding: "20px", background: "#FFF3E0",
-          borderRadius: 16, border: "2px solid #FFCC80", textAlign: "center" }}>
-          <p style={{ fontSize: 13, color: "#E65100", fontWeight: 600, marginBottom: 4 }}>
-            Byaaj banta hai
-          </p>
-          <p style={{ fontFamily: "'Baloo 2'", fontWeight: 800,
-            fontSize: 42, color: C.red, letterSpacing: -1 }}>
-            ₹{fmt(byaaj)}
-          </p>
-        </div>
-
-        {/* Total */}
-        <div style={{ marginTop: 12, padding: "14px 16px", background: C.cream,
-          borderRadius: 12, display: "flex", justifyContent: "space-between",
-          alignItems: "center", marginBottom: 32 }}>
-          <p style={{ fontSize: 14, color: C.inkMid, fontWeight: 600 }}>
-            Udhaar + Byaaj
-          </p>
-          <p style={{ fontFamily: "'Baloo 2'", fontWeight: 800, fontSize: 18, color: C.ink }}>
-            ₹{fmt(p + byaaj)}
-          </p>
-        </div>
+        <Btn2 label="⌫"   onPress={pressBackspace} />
+        <Btn2 label="0"   onPress={() => pressDigit("0")} />
+        <Btn2 label="."   onPress={() => pressDigit(".")} />
+        <Btn2 label="="   type="op"    onPress={pressEquals} />
       </div>
     </div>
-  );
-}
-
-function Label({ children, top = 0 }) {
-  return (
-    <p style={{ fontSize: 13, color: C.inkMid, fontWeight: 600,
-      marginBottom: 6, marginTop: top }}>
-      {children}
-    </p>
   );
 }
