@@ -358,6 +358,8 @@ export default function Khata({ party, onBack }) {
 // ── Byaaj Trail Popover ───────────────────────────────────────────────────────
 
 function ByaajTrailPopover({ party, trail, accruedInterest, onClose }) {
+  const [showCalc, setShowCalc] = useState(false);
+
   const totalByaaj = (trail || [])
     .filter(s => s.type === "interest")
     .reduce((sum, s) => sum + s.interest, 0);
@@ -390,14 +392,31 @@ function ByaajTrailPopover({ party, trail, accruedInterest, onClose }) {
                 {party?.name} · {rate}% / mahina
               </p>
             </div>
-            <div style={{ textAlign: "right" }}>
-              <p style={{ fontSize: 11, color: C.inkLight }}>Aaj tak ka byaaj</p>
-              <p style={{ fontFamily: "'Baloo 2'", fontWeight: 800, fontSize: 22, color: C.red }}>
-                ₹{fmt(totalByaaj)}
-              </p>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+              <div style={{ textAlign: "right" }}>
+                <p style={{ fontSize: 11, color: C.inkLight }}>Aaj tak ka byaaj</p>
+                <p style={{ fontFamily: "'Baloo 2'", fontWeight: 800, fontSize: 22, color: C.red }}>
+                  ₹{fmt(totalByaaj)}
+                </p>
+              </div>
+              <button onClick={() => setShowCalc(true)}
+                style={{ background: C.ink, border: "none", borderRadius: 20,
+                  padding: "5px 12px", cursor: "pointer",
+                  display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ fontSize: 14 }}>🧮</span>
+                <span style={{ color: C.white, fontSize: 12, fontWeight: 600 }}>Calculator</span>
+              </button>
             </div>
           </div>
         </div>
+
+        {/* Calculator sheet — slides over trail */}
+        {showCalc && (
+          <ByaajCalculator
+            party={party}
+            onClose={() => setShowCalc(false)}
+          />
+        )}
 
         {/* Trail rows */}
         <div style={{ overflowY: "auto", padding: "10px 0 32px" }}>
@@ -482,5 +501,127 @@ function Row({ label, value, valueColor, bold }) {
       <span style={{ fontFamily: "'Baloo 2'", fontWeight: bold ? 800 : 600,
         fontSize: bold ? 16 : 13, color: valueColor || C.ink }}>{value}</span>
     </div>
+  );
+}
+
+// ── Byaaj Calculator ──────────────────────────────────────────────────────────
+
+function ByaajCalculator({ party, onClose }) {
+  const [principal, setPrincipal] = useState(String(Math.round(parseFloat(party?.opening_balance) || 0)));
+  const [rate,      setRate]      = useState(String(parseFloat(party?.interest_rate) || 0));
+  const [months,    setMonths]    = useState("1");
+  const [days,      setDays]      = useState("0");
+
+  // Calculate: P × R% × (months + days/30)
+  const p = parseFloat(principal) || 0;
+  const r = parseFloat(rate)      || 0;
+  const m = parseFloat(months)    || 0;
+  const d = parseFloat(days)      || 0;
+  const time    = m + d / 30;
+  const byaaj   = Math.round(p * (r / 100) * time);
+
+  const inp = (val, set, placeholder) => (
+    <input
+      value={val}
+      onChange={e => set(e.target.value.replace(/[^0-9.]/g, ""))}
+      placeholder={placeholder}
+      inputMode="decimal"
+      style={{
+        width: "100%", padding: "12px 14px", fontSize: 18,
+        fontFamily: "'Baloo 2'", fontWeight: 700, color: C.ink,
+        background: "#F5F5F5", border: `2px solid ${C.border}`,
+        borderRadius: 12, outline: "none", boxSizing: "border-box",
+        textAlign: "right",
+      }}
+    />
+  );
+
+  return (
+    <div style={{ position: "absolute", inset: 0, background: C.white,
+      borderRadius: "20px 20px 0 0", display: "flex", flexDirection: "column",
+      zIndex: 10 }}>
+
+      {/* Header */}
+      <div style={{ padding: "16px 20px 12px", borderBottom: `1px solid ${C.border}`,
+        display: "flex", alignItems: "center", gap: 12 }}>
+        <button onClick={onClose}
+          style={{ background: "#F0F0F0", border: "none", borderRadius: "50%",
+            width: 34, height: 34, fontSize: 18, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center" }}>
+          ←
+        </button>
+        <div>
+          <p style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Baloo 2'", color: C.ink }}>
+            🧮 Byaaj Calculator
+          </p>
+          <p style={{ fontSize: 11, color: C.inkLight }}>
+            Apne hisaab se check karein
+          </p>
+        </div>
+      </div>
+
+      {/* Inputs */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px 20px 0" }}>
+
+        <Label>Udhaar (₹)</Label>
+        {inp(principal, setPrincipal, "0")}
+
+        <Label top={16}>Byaaj dar (% per mahina)</Label>
+        {inp(rate, setRate, "0")}
+
+        <Label top={16}>Samay</Label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div>
+            <p style={{ fontSize: 11, color: C.inkLight, marginBottom: 4 }}>Mahine</p>
+            {inp(months, setMonths, "0")}
+          </div>
+          <div>
+            <p style={{ fontSize: 11, color: C.inkLight, marginBottom: 4 }}>Din</p>
+            {inp(days, setDays, "0")}
+          </div>
+        </div>
+
+        {/* Formula shown simply */}
+        <div style={{ marginTop: 20, padding: "10px 14px", background: "#F5F5F5",
+          borderRadius: 10 }}>
+          <p style={{ fontSize: 12, color: C.inkLight, textAlign: "center" }}>
+            ₹{fmt(p)} × {r}% × {time.toFixed(2)} mahine
+          </p>
+        </div>
+
+        {/* Big result */}
+        <div style={{ marginTop: 16, padding: "20px", background: "#FFF3E0",
+          borderRadius: 16, border: "2px solid #FFCC80", textAlign: "center" }}>
+          <p style={{ fontSize: 13, color: "#E65100", fontWeight: 600, marginBottom: 4 }}>
+            Byaaj banta hai
+          </p>
+          <p style={{ fontFamily: "'Baloo 2'", fontWeight: 800,
+            fontSize: 42, color: C.red, letterSpacing: -1 }}>
+            ₹{fmt(byaaj)}
+          </p>
+        </div>
+
+        {/* Total */}
+        <div style={{ marginTop: 12, padding: "14px 16px", background: C.cream,
+          borderRadius: 12, display: "flex", justifyContent: "space-between",
+          alignItems: "center", marginBottom: 32 }}>
+          <p style={{ fontSize: 14, color: C.inkMid, fontWeight: 600 }}>
+            Udhaar + Byaaj
+          </p>
+          <p style={{ fontFamily: "'Baloo 2'", fontWeight: 800, fontSize: 18, color: C.ink }}>
+            ₹{fmt(p + byaaj)}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Label({ children, top = 0 }) {
+  return (
+    <p style={{ fontSize: 13, color: C.inkMid, fontWeight: 600,
+      marginBottom: 6, marginTop: top }}>
+      {children}
+    </p>
   );
 }
