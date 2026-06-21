@@ -2,8 +2,10 @@ import { useState } from "react";
 import { useApp } from "../context/AppContext";
 import { Shell, C, Card, TopBar, Btn, Field, Tag, fmt } from "../components/ui";
 import PinConfirm from "../components/PinConfirm";
+import { useKhata } from "../hooks/useKhata";
 
 export default function Khata({ party, onBack }) {
+  const k = useKhata(party);
   const { parties, payments, ledger, savePayment, deletePayment, trueBalance, computePartyInterest } = useApp();
   const bankAccounts = parties.filter(p => p.type === "Bank");
   const [showPay, setShowPay]         = useState(false);
@@ -13,6 +15,7 @@ export default function Khata({ party, onBack }) {
   const [nakadNote, setNakadNote]     = useState("");
   const [selEntry, setSelEntry]       = useState(null); // selected ledger entry
   const [pinAction, setPinAction]     = useState(null); // "edit" | "delete"
+  const [showByaaj, setShowByaaj]     = useState(false);
   const [editingPay, setEditingPay]   = useState(null); // payment data pre-filled for edit
   const [busy, setBusy]               = useState(false);
   const [error, setError]             = useState("");
@@ -119,6 +122,16 @@ export default function Khata({ party, onBack }) {
         />
       )}
 
+      {/* Byaaj trail popover */}
+      {showByaaj && (
+        <ByaajTrailPopover
+          party={party}
+          trail={k.interestTrail}
+          accruedInterest={k.accruedInterest}
+          onClose={() => setShowByaaj(false)}
+        />
+      )}
+
       {/* Payment detail bottom sheet */}
       {selEntry && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 100 }} onClick={() => setSelEntry(null)}>
@@ -168,9 +181,16 @@ export default function Khata({ party, onBack }) {
               {/* bal > 0 = farmer owes arhtiya = interest accrues */}
               {/* bal < 0 = arhtiya owes farmer = interest free */}
               {accruedInterest > 0 && bal > 0 && (
-                <p style={{ color: "rgba(255,255,255,0.85)", fontSize: 12, marginTop: 2 }}>
-                  + ₹{fmt(accruedInterest)} byaaj (accrued)
-                </p>
+                <button onClick={() => setShowByaaj(true)}
+                  style={{ background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.35)",
+                    borderRadius: 20, padding: "3px 12px", marginTop: 6, cursor: "pointer",
+                    display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 13 }}>📈</span>
+                  <span style={{ color: C.white, fontSize: 12, fontWeight: 600 }}>
+                    + ₹{fmt(accruedInterest)} byaaj
+                  </span>
+                  <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 11 }}>dekhein →</span>
+                </button>
               )}
               {bal < 0 && party.interest_rate > 0 && (
                 <p style={{ color: "rgba(255,255,255,0.75)", fontSize: 11, marginTop: 2 }}>
@@ -332,5 +352,135 @@ export default function Khata({ party, onBack }) {
         </div>
       </div>
     </Shell>
+  );
+}
+
+// ── Byaaj Trail Popover ───────────────────────────────────────────────────────
+
+function ByaajTrailPopover({ party, trail, accruedInterest, onClose }) {
+  const totalByaaj = (trail || [])
+    .filter(s => s.type === "interest")
+    .reduce((sum, s) => sum + s.interest, 0);
+
+  const rate = parseFloat(party?.interest_rate) || 0;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
+        zIndex: 300, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ background: C.white, borderRadius: "20px 20px 0 0",
+          maxHeight: "82vh", display: "flex", flexDirection: "column" }}>
+
+        {/* Drag handle */}
+        <div style={{ padding: "12px 0 4px", display: "flex", justifyContent: "center" }}>
+          <div style={{ width: 36, height: 4, borderRadius: 2, background: C.border }} />
+        </div>
+
+        {/* Header */}
+        <div style={{ padding: "8px 20px 14px", borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <p style={{ fontSize: 17, fontWeight: 800, fontFamily: "'Baloo 2'", color: C.ink }}>
+                📈 Byaaj ka hisaab
+              </p>
+              <p style={{ fontSize: 12, color: C.inkLight, marginTop: 2 }}>
+                {party?.name} · {rate}% / mahina
+              </p>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <p style={{ fontSize: 11, color: C.inkLight }}>Aaj tak ka byaaj</p>
+              <p style={{ fontFamily: "'Baloo 2'", fontWeight: 800, fontSize: 22, color: C.red }}>
+                ₹{fmt(totalByaaj)}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Trail rows */}
+        <div style={{ overflowY: "auto", padding: "10px 0 32px" }}>
+          {(!trail || trail.length === 0) ? (
+            <p style={{ textAlign: "center", color: C.inkLight, padding: "32px 0", fontSize: 14 }}>
+              Abhi tak byaaj nahi laga
+            </p>
+          ) : trail.map((seg, i) => (
+            seg.type === "compound" ? (
+              /* ── 1st April compounding row ── */
+              <div key={i} style={{ margin: "6px 16px", padding: "10px 14px",
+                background: "#FFF8E1", borderRadius: 12, border: "1px solid #FFE082",
+                display: "flex", alignItems: "center", gap: 12 }}>
+                <span style={{ fontSize: 22 }}>🔄</span>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: "#F57F17" }}>
+                    1 April — Byaaj juda
+                  </p>
+                  <p style={{ fontSize: 12, color: C.inkMid, marginTop: 2 }}>
+                    ₹{fmt(seg.addedInterest)} byaaj, udhaar mein jod diya
+                  </p>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <p style={{ fontSize: 10, color: C.inkLight }}>Naya udhaar</p>
+                  <p style={{ fontWeight: 700, fontSize: 14, color: C.ink, fontFamily: "'Baloo 2'" }}>
+                    ₹{fmt(seg.newPrincipal)}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              /* ── Regular interest period row ── */
+              <div key={i} style={{ padding: "12px 20px",
+                borderBottom: i < trail.length - 1 ? `1px solid ${C.border}` : "none" }}>
+
+                {/* Period label */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: 13, color: C.ink, fontWeight: 600 }}>
+                      {seg.label}
+                    </p>
+                    {/* Plain language explanation */}
+                    <p style={{ fontSize: 11, color: C.inkLight, marginTop: 3, lineHeight: 1.5 }}>
+                      ₹{fmt(seg.principal)} udhaar × {rate}% × {seg.duration}
+                    </p>
+                  </div>
+                  <p style={{ fontFamily: "'Baloo 2'", fontWeight: 700,
+                    fontSize: 15, color: C.red, flexShrink: 0, marginLeft: 12 }}>
+                    + ₹{fmt(seg.interest)}
+                  </p>
+                </div>
+              </div>
+            )
+          ))}
+
+          {/* Summary box at bottom */}
+          {trail && trail.length > 0 && (
+            <div style={{ margin: "16px 16px 0", padding: 14,
+              background: "#FFF3E0", borderRadius: 14,
+              border: "1px solid #FFCC80" }}>
+              <Row label="Kul udhaar (aaj)" value={`₹${fmt(party?.opening_balance || 0)}`} />
+              <Row label="Kul byaaj bana" value={`+ ₹${fmt(totalByaaj)}`} valueColor={C.red} />
+              <div style={{ borderTop: `1px solid #FFCC80`, marginTop: 8, paddingTop: 8 }}>
+                <Row
+                  label="Aaj tak dena hai"
+                  value={`₹${fmt((parseFloat(party?.opening_balance) || 0) + totalByaaj)}`}
+                  bold
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Row({ label, value, valueColor, bold }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between",
+      alignItems: "center", marginBottom: 6 }}>
+      <span style={{ fontSize: 13, color: C.inkMid, fontWeight: bold ? 700 : 400 }}>{label}</span>
+      <span style={{ fontFamily: "'Baloo 2'", fontWeight: bold ? 800 : 600,
+        fontSize: bold ? 16 : 13, color: valueColor || C.ink }}>{value}</span>
+    </div>
   );
 }
