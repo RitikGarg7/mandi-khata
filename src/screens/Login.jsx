@@ -168,7 +168,7 @@ export default function Login({ onLoggedIn }) {
     setBusy(true); setError("");
     try {
       const key = await unlock(user, p);
-      await loadAll(key);
+      await loadAll(key, user);
       onLoggedIn();
     } catch (e) {
       setError(e.message || "Galat PIN. Dobara try karein.");
@@ -196,7 +196,7 @@ export default function Login({ onLoggedIn }) {
       };
       const blob = await encrypt(key, settingsData);
       await db.saveSettings(null, blob);
-      await loadAll(key);
+      await loadAll(key, fireUser);
       onLoggedIn();
     } catch (e) {
       setError(e.message);
