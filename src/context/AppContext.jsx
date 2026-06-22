@@ -19,6 +19,7 @@ import { createContext, useContext, useState, useCallback } from "react";
 import { auth, db, signOut } from "../lib/firebase";
 import { deriveKey, encrypt, decrypt, decryptRows } from "../lib/crypto";
 import { computeInterest } from "../services/interestCalculator";
+import { fetchWaParties, markWaPartyImported } from "../services/waImport";
 import {
   calcTrueBalance,
   calcPartyBalance,
@@ -58,7 +59,7 @@ export function AppProvider({ children }) {
     return key;
   }, []);
 
-  const loadAll = useCallback(async (key) => {
+  const loadAll = useCallback(async (key, fireUser) => {
     setLoading(true); setError(null);
     try {
       const [rawSettings, rawParties, rawPBills, rawSBills, rawPayments, rawLedger] =
@@ -74,11 +75,38 @@ export function AppProvider({ children }) {
         const dec = await decrypt(key, rawSettings.data);
         setSettings({ id: rawSettings.id, ...dec });
       }
-      setParties(rawParties.length      ? await decryptRows(key, rawParties)  : []);
+      const decParties = rawParties.length ? await decryptRows(key, rawParties) : [];
       setPurchaseBills(rawPBills.length ? await decryptRows(key, rawPBills)   : []);
       setSaleBills(rawSBills.length     ? await decryptRows(key, rawSBills)   : []);
       setPayments(rawPayments.length    ? await decryptRows(key, rawPayments) : []);
       setLedger(rawLedger.length        ? await decryptRows(key, rawLedger)   : []);
+
+      // ── Import WhatsApp parties ─────────────────────────────────────────────
+      let allParties = decParties;
+      if (fireUser?.phoneNumber) {
+        const waParties = await fetchWaParties(fireUser.phoneNumber);
+        if (waParties.length > 0) {
+          const imported = [];
+          for (const wp of waParties) {
+            const partyData = {
+              name:                 wp.name,
+              opening_balance:      wp.opening_balance || 0,
+              opening_balance_date: wp.opening_balance_date || new Date().toISOString().split("T")[0],
+              interest_rate:        wp.interest_rate || 0,
+              type:                 wp.type || "Farmer",
+              source:               "whatsapp",
+            };
+            const blob  = await encrypt(key, partyData);
+            const newId = await db.upsert("parties", null, blob);
+            imported.push({ id: newId, ...partyData });
+            await markWaPartyImported(fireUser.phoneNumber, wp.docId);
+          }
+          allParties = [...imported, ...decParties];
+        }
+      }
+      setParties(allParties);
+      // ───────────────────────────────────────────────────────────────────────
+
     } catch (e) {
       setLoading(false);
       throw e;
