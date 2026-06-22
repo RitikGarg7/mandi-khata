@@ -130,14 +130,54 @@ function handleMessage(text, state) {
   const step = state?.step || "WELCOME";
   const data = state?.data || {};
 
+  // Global keyword — kisi bhi step mein "menu" likho toh menu pe wapas
+  if (text.trim().toLowerCase() === "menu" && step !== "WELCOME") {
+    return {
+      reply: `🏠 *Main Menu*\n\n1️⃣ Nayi party add karo\n2️⃣ Form J banao\n3️⃣ Form I banao`,
+      newState: { step: "MENU", data: {} },
+      partyData: null,
+    };
+  }
+
   switch (step) {
 
     case "WELCOME":
       return {
-        reply: `🙏 Namaste! Mandi Khata mein aapka swagat hai.\n\nNayi party add karne ke liye — *kisan ka naam* likhein:`,
-        newState: { step: "NAAM", data: {} },
+        reply: `🙏 Namaste! *Mandi Khata* mein aapka swagat hai! 🌾\n\nAap kya karna chahte hain?\n\n1️⃣ Nayi party add karo\n2️⃣ Form J banao\n3️⃣ Form I banao\n\nSirf number bhejein — *1*, *2*, ya *3*`,
+        newState: { step: "MENU", data: {} },
         partyData: null,
       };
+
+    case "MENU": {
+      const t = text.trim();
+      if (t === "1") {
+        return {
+          reply: `➕ *Nayi Party*\n\nKisan ka naam likhein:`,
+          newState: { step: "NAAM", data: {} },
+          partyData: null,
+        };
+      }
+      if (t === "2") {
+        return {
+          reply: `📋 *Form J*\n\nYeh feature jald aa raha hai!\n\nWapas menu ke liye *"menu"* likhein.`,
+          newState: { step: "MENU", data: {} },
+          partyData: null,
+        };
+      }
+      if (t === "3") {
+        return {
+          reply: `📋 *Form I*\n\nYeh feature jald aa raha hai!\n\nWapas menu ke liye *"menu"* likhein.`,
+          newState: { step: "MENU", data: {} },
+          partyData: null,
+        };
+      }
+      // Unrecognized — show menu again
+      return {
+        reply: `❌ 1, 2, ya 3 likhein:\n\n1️⃣ Nayi party add karo\n2️⃣ Form J banao\n3️⃣ Form I banao`,
+        newState: { step: "MENU", data: {} },
+        partyData: null,
+      };
+    }
 
     case "NAAM": {
       if (!text || text.length < 2)
@@ -220,14 +260,14 @@ function handleMessage(text, state) {
       if (!yes)
         return { reply: `*"haan"* ya *"nahi"* likhein:`, newState: state, partyData: null };
       return {
-        reply: `🎉 *${data.naam}* ki party save ho gayi!\n\nMandi Khata app mein dekh sakte hain.\n\n➕ Ek aur party add karni ho toh kuch bhi likhein.`,
-        newState: { step: "WELCOME", data: {} },
+        reply: `🎉 *${data.naam}* ki party save ho gayi!\n\nMandi Khata app mein dekh sakte hain.\n\n━━━━━━━━━━━━━━\n1️⃣ Nayi party add karo\n2️⃣ Form J banao\n3️⃣ Form I banao`,
+        newState: { step: "MENU", data: {} },
         partyData: data,
       };
     }
 
     default:
-      return { reply: `🙏 Nayi party add karne ke liye kuch bhi likhein.`, newState: { step: "WELCOME", data: {} }, partyData: null };
+      return { reply: `🙏 Namaste! Aap kya karna chahte hain?\n\n1️⃣ Nayi party add karo\n2️⃣ Form J banao\n3️⃣ Form I banao`, newState: { step: "MENU", data: {} }, partyData: null };
   }
 }
 
