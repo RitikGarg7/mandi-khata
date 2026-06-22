@@ -84,7 +84,9 @@ export function AppProvider({ children }) {
       // ── Import WhatsApp parties ─────────────────────────────────────────────
       let allParties = decParties;
       if (fireUser?.phoneNumber) {
+        console.log("[WA Import] Checking for phone:", fireUser.phoneNumber);
         const waParties = await fetchWaParties(fireUser.phoneNumber);
+        console.log("[WA Import] Found parties:", waParties.length, waParties);
         if (waParties.length > 0) {
           const imported = [];
           for (const wp of waParties) {
